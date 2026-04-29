@@ -17,9 +17,10 @@
             --bg-white: #ffffff;
             --bg-light: #f8f9fa;
             --text-black: #1a1a1a;
-            --glass-white: rgba(255, 255, 255, 0.4);
-            --glass-border: rgba(213, 217, 224, 0.3);
-            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+            --glass-white: rgba(255, 255, 255, 0.45);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+            --premium-gradient: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0.1) 100%);
         }
 
         body {
@@ -47,9 +48,9 @@
             position: sticky;
             top: 0;
             z-index: 1000;
-            background: var(--glass-white);
-            backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--glass-border);
             padding: 1rem 0;
         }
@@ -61,19 +62,43 @@
         }
 
         .glass-card {
-            background: var(--glass-white);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(13, 110, 253, 0.3);
-            border-radius: 1.2rem;
+            background: var(--premium-gradient);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
             box-shadow: var(--glass-shadow);
             padding: 2.5rem;
-            transition: transform 0.3s ease;
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
             height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .glass-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            transition: 0.5s;
+        }
+
+        .glass-card:hover::before {
+            left: 100%;
         }
 
         .glass-card:hover {
-            transform: translateY(-5px);
+            transform: translateY(-8px);
+            box-shadow: 0 15px 45px rgba(0, 0, 0, 0.08);
+            border-color: var(--primary-blue);
         }
 
         .btn-premium {
@@ -109,6 +134,21 @@
             font-size: 0.7rem;
             text-transform: uppercase;
             letter-spacing: 1px;
+        }
+
+        .icon-blob {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 20px;
+            margin-bottom: 1rem;
+            transition: transform 0.3s ease;
+        }
+
+        .glass-card:hover .icon-blob {
+            transform: scale(1.1) rotate(5deg);
         }
     </style>
     {% block extra_css %}{% endblock %}
