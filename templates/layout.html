@@ -147,8 +147,26 @@
             transition: transform 0.3s ease;
         }
 
-        .glass-card:hover .icon-blob {
-            transform: scale(1.1) rotate(5deg);
+        .source-icon {
+            width: 40px;
+            height: 40px;
+            border: 1.5px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #5f6368;
+            transition: all 0.3s ease;
+        }
+
+        .source-icon:hover {
+            background: rgba(0, 0, 0, 0.05);
+            border-color: var(--primary-blue);
+            color: var(--primary-blue);
+        }
+
+        .nav-link.hover-blue:hover {
+            color: var(--primary-blue) !important;
         }
     </style>
     {% block extra_css %}{% endblock %}
@@ -157,12 +175,16 @@
     <canvas id="particleCanvas"></canvas>
 
     <nav class="glass-navbar">
-        <div class="container">
+        <div class="container d-flex justify-content-between align-items-center">
             <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-lightning-charge-fill me-2 text-primary" viewBox="0 0 16 16">
-                    <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
-                </svg>
-                PDF.PRO
+                <div class="source-icon me-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-code-slash" viewBox="0 0 16 16">
+                        <path d="M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294l4-13zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0zm6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0z"/>
+                    </svg>
+                </div>
+            </a>
+            <a href="https://placement-project-delta.vercel.app/source" target="_blank" class="nav-link fw-bold text-dark hover-blue transition">
+                About Me
             </a>
         </div>
     </nav>
