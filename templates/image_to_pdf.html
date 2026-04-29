@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+
+{% block title %}Image to PDF | PDF.PRO{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="glass-card">
+            <div class="d-flex align-items-center mb-4">
+                <a href="{{ url_for('home') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius: 50%;">←</a>
+                <h2 class="fw-bold m-0">Image to PDF</h2>
+            </div>
+            <p class="text-muted mb-4">Select multiple images to compile them into a single PDF document.</p>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show mb-4" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form action="{{ url_for('image_to_pdf') }}" method="POST" enctype="multipart/form-data">
+                <div class="mb-4">
+                    <label for="images" class="form-label fw-bold">Upload Images (JPG, PNG, WEBP)</label>
+                    <input class="form-control form-control-premium" type="file" id="images" name="images" accept=".jpg, .jpeg, .png, .webp" multiple required>
+                    <div class="form-text mt-2">Max total size: 50MB. Processed entirely in RAM.</div>
+                </div>
+                <div class="d-grid mt-5">
+                    <button type="submit" class="btn-premium py-3">Generate PDF</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

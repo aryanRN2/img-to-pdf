@@ -1,0 +1,87 @@
+{% extends "layout.html" %}
+
+{% block title %}Home | PDF.PRO{% endblock %}
+
+{% block extra_css %}
+<style>
+    .hero-title {
+        font-weight: 800;
+        font-size: 3.5rem;
+        letter-spacing: -2px;
+        margin-bottom: 1.5rem;
+    }
+    .feature-icon {
+        font-size: 2.5rem;
+        margin-bottom: 1.5rem;
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center text-center py-5">
+    <div class="col-lg-10">
+        <h1 class="hero-title" id="typewriter"></h1>
+        <p class="lead text-muted mb-5">Professional, in-memory document tools. No data ever touches our disks.</p>
+    </div>
+</div>
+
+<div class="row g-4 justify-content-center">
+    <!-- Image to PDF -->
+    <div class="col-md-4">
+        <div class="glass-card text-center d-flex flex-column">
+            <span class="feature-icon text-primary">🖼️</span>
+            <h3 class="fw-bold mb-3">Image to PDF</h3>
+            <p class="text-muted flex-grow-1">Convert JPG, PNG, and WEBP images into a single professional PDF.</p>
+            <div class="mt-4">
+                <a href="{{ url_for('image_to_pdf') }}" class="btn-premium">Open Tool</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merge PDF -->
+    <div class="col-md-4">
+        <div class="glass-card text-center d-flex flex-column">
+            <span class="feature-icon text-success">📚</span>
+            <h3 class="fw-bold mb-3">Merge PDF</h3>
+            <p class="text-muted flex-grow-1">Combine multiple PDF documents into one seamless file instantly.</p>
+            <div class="mt-4">
+                <a href="{{ url_for('merge_pdf') }}" class="btn-premium">Open Tool</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image to LaTeX -->
+    <div class="col-md-4">
+        <div class="glass-card text-center d-flex flex-column" style="opacity: 0.7;">
+            <div class="mb-2">
+                <span class="badge badge-coming-soon">Coming Soon</span>
+            </div>
+            <span class="feature-icon text-secondary">⚛️</span>
+            <h3 class="fw-bold mb-3">Image to LaTeX</h3>
+            <p class="text-muted flex-grow-1">Extract mathematical formulas and text into professional LaTeX code.</p>
+            <div class="mt-4">
+                <button class="btn btn-secondary-premium w-100" disabled>Unavailable</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const typewriterElement = document.getElementById('typewriter');
+        const text = "All-in-One Document Portal";
+        let index = 0;
+        function type() {
+            if (index < text.length) {
+                typewriterElement.innerHTML += text.charAt(index);
+                index++;
+                setTimeout(type, 70);
+            }
+        }
+        type();
+    });
+</script>
+{% endblock %}

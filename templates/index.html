@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Image to PDF Converter</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #0d6efd;
+            --primary-blue-dark: #0a58ca;
+            --bg-white: #ffffff;
+            --bg-light: #f8f9fa;
+            --text-black: #1a1a1a;
+            --glass-white: rgba(255, 255, 255, 0.4);
+            --glass-border: rgba(213, 217, 224, 0.3);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-white);
+            color: var(--text-black);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Particle Canvas */
+        #particleCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 3s ease-in-out;
+        }
+
+        /* Glass Navbar */
+        .glass-navbar {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background: var(--glass-white);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 1rem 0;
+        }
+
+        .navbar-brand {
+            font-weight: 800;
+            color: var(--text-black);
+            letter-spacing: -1px;
+        }
+
+        /* Glass Card */
+        .glass-card {
+            background: var(--glass-white);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(13, 110, 253, 0.3);
+            border-radius: 1.2rem;
+            box-shadow: var(--glass-shadow);
+            padding: 3rem;
+            margin-top: 2rem;
+            transition: transform 0.3s ease;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-5px);
+        }
+
+        /* Typewriter Headline */
+        .hero-headline {
+            font-weight: 800;
+            font-size: 3.5rem;
+            letter-spacing: -2px;
+            margin-bottom: 1rem;
+            min-height: 4.5rem;
+        }
+
+        /* Hero Buttons */
+        .btn-premium {
+            background-color: var(--text-black);
+            color: white;
+            border-radius: 50px;
+            padding: 0.8rem 2.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+        }
+
+        .btn-premium:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            background-color: #333;
+            color: white;
+        }
+
+        .btn-secondary-premium {
+            background-color: var(--bg-light);
+            color: var(--text-black);
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 50px;
+            padding: 0.8rem 2.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary-premium:hover {
+            background-color: #eee;
+            transform: translateY(-3px);
+        }
+
+        /* Form Styling */
+        .form-control-premium {
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-control-premium:focus {
+            background: white;
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1);
+        }
+
+        /* Alert Styling */
+        .alert-glass {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .fade-in-up {
+            animation: fadeIn 1s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="particleCanvas"></canvas>
+
+    <!-- Glass Navbar -->
+    <nav class="glass-navbar">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="#">
+                <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" fill="currentColor" class="bi bi-lightning-charge-fill me-2 text-primary" viewBox="0 0 16 16">
+                    <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
+                </svg>
+                PDF.PRO
+            </a>
+        </div>
+    </nav>
+
+    <main class="container py-5">
+        <div class="row align-items-center min-vh-75 mt-4">
+            <div class="col-lg-12 text-center fade-in-up">
+                <h1 class="hero-headline" id="typewriter"></h1>
+                <p class="lead text-muted mb-5">Highly robust, in-memory image processing for the modern web.</p>
+                
+                <div class="glass-card text-start mx-auto" style="max-width: 600px;">
+                    <h3 class="fw-bold mb-4">Conversion Portal</h3>
+                    
+                    <!-- Flash Messages -->
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                            {% for category, message in messages %}
+                                <div class="alert alert-glass alert-dismissible fade show mb-4" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>
+                            {% endfor %}
+                        {% endif %}
+                    {% endwith %}
+
+                    <!-- Upload Form -->
+                    <form action="/" method="POST" enctype="multipart/form-data">
+                        <div class="mb-4">
+                            <label for="images" class="form-label fw-600">Select Images (JPG, PNG, WEBP)</label>
+                            <input class="form-control form-control-premium" type="file" id="images" name="images" accept=".jpg, .jpeg, .png, .webp" multiple required>
+                            <div class="form-text mt-2">Max upload size: 50MB. All processing is done in-memory.</div>
+                        </div>
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-start mt-5">
+                            <button type="submit" class="btn btn-premium">Generate PDF</button>
+                            <button type="reset" class="btn btn-secondary-premium">Clear All</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    <script>
+        // Typewriter Effect
+        document.addEventListener('DOMContentLoaded', () => {
+            const typewriterElement = document.getElementById('typewriter');
+            const text = "Modern Image to PDF Converter";
+            let index = 0;
+            
+            function type() {
+                if (index < text.length) {
+                    typewriterElement.innerHTML += text.charAt(index);
+                    index++;
+                    setTimeout(type, 70);
+                }
+            }
+            
+            type();
+
+            // Particle Canvas Logic
+            const canvas = document.getElementById('particleCanvas');
+            const ctx = canvas.getContext('2d');
+            let width, height;
+            let particles = [];
+
+            // Fade in canvas
+            setTimeout(() => {
+                canvas.style.opacity = '1';
+            }, 100);
+
+            const particleSpacing = 60;
+            const particleRadius = 2;
+            const mouseRadius = 200;
+            const repelForce = 8;
+            const returnSpeed = 0.05;
+
+            // Premium Google-esque Palette
+            const colors = ['#4285F4', '#EA4335', '#FBBC05', '#34A853', '#8E24AA'];
+
+            let mouse = { x: undefined, y: undefined };
+            let isMouseOverClickable = false;
+
+            class Particle {
+                constructor(x, y) {
+                    this.homeX = x;
+                    this.homeY = y;
+                    this.x = x;
+                    this.y = y;
+                    this.vx = 0;
+                    this.vy = 0;
+                    this.color = colors[Math.floor(Math.random() * colors.length)];
+                    this.driftSpeed = 0.0002 + Math.random() * 0.0005;
+                    this.driftRadius = 30 + Math.random() * 50;
+                    this.randomOffset = Math.random() * Math.PI * 2;
+                }
+
+                draw() {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, particleRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = this.color;
+                    ctx.globalAlpha = 0.4;
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+                }
+
+                update() {
+                    let dx = mouse.x - this.x;
+                    let dy = mouse.y - this.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < mouseRadius) {
+                        const forceDirectionX = dx / distance;
+                        const forceDirectionY = dy / distance;
+                        const force = (mouseRadius - distance) / mouseRadius;
+
+                        if (isMouseOverClickable) {
+                            // Attraction
+                            this.vx += forceDirectionX * force * repelForce * 1.5;
+                            this.vy += forceDirectionY * force * repelForce * 1.5;
+                        } else {
+                            // Repulsion
+                            this.vx -= forceDirectionX * force * repelForce;
+                            this.vy -= forceDirectionY * force * repelForce;
+                        }
+                    }
+
+                    const time = Date.now();
+                    const targetX = this.homeX + Math.cos(time * this.driftSpeed + this.randomOffset) * this.driftRadius;
+                    const targetY = this.homeY + Math.sin(time * this.driftSpeed + this.randomOffset) * this.driftRadius;
+
+                    this.vx += (targetX - this.x) * returnSpeed;
+                    this.vy += (targetY - this.y) * returnSpeed;
+
+                    this.vx *= 0.8;
+                    this.vy *= 0.8;
+
+                    this.x += this.vx;
+                    this.y += this.vy;
+
+                    this.draw();
+                }
+            }
+
+            function initParticles() {
+                particles = [];
+                for (let y = 0; y < height + particleSpacing; y += particleSpacing) {
+                    for (let x = 0; x < width + particleSpacing; x += particleSpacing) {
+                        particles.push(new Particle(x, y));
+                    }
+                }
+            }
+
+            function resize() {
+                width = window.innerWidth;
+                height = window.innerHeight;
+                canvas.width = width;
+                canvas.height = height;
+                initParticles();
+            }
+
+            function animate() {
+                ctx.clearRect(0, 0, width, height);
+                particles.forEach(p => p.update());
+                requestAnimationFrame(animate);
+            }
+
+            window.addEventListener('resize', resize);
+            window.addEventListener('mousemove', (e) => {
+                mouse.x = e.clientX;
+                mouse.y = e.clientY;
+                isMouseOverClickable = !!e.target.closest('a, button, input');
+            });
+
+            resize();
+            animate();
+        });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
