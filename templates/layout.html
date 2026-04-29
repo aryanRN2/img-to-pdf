@@ -185,22 +185,37 @@
             transition: transform 0.3s ease;
         }
 
-        .source-icon {
-            width: 40px;
-            height: 40px;
-            border: 1.5px solid rgba(0, 0, 0, 0.1);
-            border-radius: 50%;
-            display: flex;
+        .source-backdoor {
+            display: inline-flex;
             align-items: center;
             justify-content: center;
+            width: 45px;
+            height: 45px;
+            background-color: #f8f9fa;
             color: #5f6368;
-            transition: all 0.3s ease;
+            border-radius: 50%;
+            border: 2px solid #dee2e6;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .source-icon:hover {
-            background: rgba(0, 0, 0, 0.05);
-            border-color: var(--primary-blue);
-            color: var(--primary-blue);
+        .source-backdoor:hover {
+            background-color: #1a1a1a;
+            color: #4285F4 !important;
+            transform: translateY(-5px) scale(1.1);
+            box-shadow: 0 10px 20px rgba(66, 133, 244, 0.3);
+            border-color: #1a1a1a;
+        }
+
+        .code-icon {
+            font-weight: 800;
+            font-size: 1.1rem;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-block;
+        }
+
+        .source-backdoor:hover .code-icon {
+            transform: rotate(360deg);
         }
 
         .nav-link.hover-blue:hover {
@@ -256,14 +271,13 @@
         {% block content %}{% endblock %}
     </main>
 
-    <!-- Floating About Me Icon at Bottom -->
-    <div class="fixed-bottom pb-4 d-flex justify-content-center">
-        <a href="https://placement-project-delta.vercel.app/source" target="_blank" class="source-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-code-slash" viewBox="0 0 16 16">
-                <path d="M10.478 1.647a.5.5 0 1 0-.956-.294l-4 13a.5.5 0 0 0 .956.294l4-13zM4.854 4.146a.5.5 0 0 1 0 .708L1.707 8l3.147 3.146a.5.5 0 0 1-.708.708l-3.5-3.5a.5.5 0 0 1 0-.708l3.5-3.5a.5.5 0 0 1 .708 0zm6.292 0a.5.5 0 0 0 0 .708L14.293 8l-3.147 3.146a.5.5 0 0 0 .708.708l3.5-3.5a.5.5 0 0 0 0-.708l-3.5-3.5a.5.5 0 0 0-.708 0z"/>
-            </svg>
-        </a>
-    </div>
+    <footer class="text-center py-4 mt-5 border-top">
+        <div class="container">
+            <a href="https://placement-project-delta.vercel.app/source" target="_blank" class="source-backdoor" title="Access Developer Mode">
+                <span class="code-icon">&lt;/&gt;</span>
+            </a>
+        </div>
+    </footer>
 
     <script src="{{ url_for('static', filename='js/particles.js') }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
