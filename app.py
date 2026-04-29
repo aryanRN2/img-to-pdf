@@ -28,6 +28,10 @@ def allowed_pdf(filename):
 def home():
     return render_template('home.html')
 
+@app.route('/source')
+def source():
+    return render_template('source.html')
+
 @app.route('/image-to-pdf', methods=['GET', 'POST'])
 def image_to_pdf():
     if request.method == 'POST':

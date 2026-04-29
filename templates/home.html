@@ -124,14 +124,7 @@
 
 {% block content %}
 <section class="hero-section">
-    <div class="hero-badge">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M8 0a8 8 0 1 0 8 8A8 8 0 0 0 8 0zm3.5 7.5L8 11 4.5 7.5 5.914 6.086 8 8.172l2.086-2.086L11.5 7.5z"/>
-        </svg>
-        Build the new way
-    </div>
-    
-    <h1 class="hero-headline">Welcome to the Premium Document Portal</h1>
+    <h1 class="hero-headline" id="hero-typewriter"></h1>
     
     <div class="hero-buttons">
         <a href="{{ url_for('image_to_pdf') }}" class="btn-portal-primary">
@@ -149,6 +142,21 @@
 
 {% block extra_js %}
 <script>
-    // Optional: Add typewriter back if needed, but Antigravity is cleaner without it
+    document.addEventListener('DOMContentLoaded', () => {
+        const typewriterElement = document.getElementById('hero-typewriter');
+        const text = "Welcome to the Premium Document Portal";
+        let index = 0;
+
+        function type() {
+            if (index < text.length) {
+                typewriterElement.innerHTML += text.charAt(index);
+                index++;
+                setTimeout(type, 80);
+            }
+        }
+        
+        // Start typewriter
+        type();
+    });
 </script>
 {% endblock %}
