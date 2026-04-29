@@ -70,10 +70,10 @@
     }
 
     .btn-portal-glass {
-        background: rgba(255, 255, 255, 0.4);
+        background: rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(124, 181, 157, 0.3);
         color: #1a1a1a;
         padding: 14px 32px;
         border-radius: 50px;
@@ -83,10 +83,10 @@
     }
 
     .btn-portal-glass:hover {
-        background: rgba(255, 255, 255, 0.6);
+        background: rgba(167, 201, 186, 0.4);
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.05);
-        border-color: rgba(0,0,0,0.2);
+        box-shadow: 0 8px 20px rgba(124, 181, 157, 0.15);
+        border-color: rgba(124, 181, 157, 0.6);
         color: #1a1a1a;
     }
 
@@ -111,9 +111,46 @@
         </a>
         <a href="{{ url_for('merge_pdf') }}" class="btn-portal-glass">Merge PDF</a>
         <a href="{{ url_for('document_to_pdf') }}" class="btn-portal-glass">Document to PDF</a>
+        <button type="button" class="btn-portal-glass d-inline-flex align-items-center" id="latexAiBtn" disabled style="opacity: 0.6; cursor: not-allowed;">
+            Image to LaTeX
+            <span class="badge badge-coming-soon ms-2">Under Construction</span>
+        </button>
     </div>
 </section>
+<!-- BHU Confirmation Modal -->
+<div id="bhuModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.45); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+    <div style="background:rgba(255,255,255,0.85); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.5); border-radius:2rem; padding:2.5rem; max-width:420px; width:90%; margin:auto; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.15); animation:fadeInModal 0.3s ease;">
+        <div style="width:64px;height:64px;border-radius:50%;background:rgba(124,181,157,0.15);display:flex;align-items:center;justify-content:center;margin:0 auto 1.2rem;font-size:1.8rem;">🎓</div>
+        <h3 style="font-weight:800;font-size:1.4rem;letter-spacing:-0.5px;margin-bottom:0.5rem;">Are you a BHU Student?</h3>
+        <p style="color:#6c757d;font-size:0.88rem;margin-bottom:1.8rem;">This AI feature is currently available only to Aryan's friends &amp; colleagues from <strong>Banaras Hindu University</strong>.</p>
+        <div style="display:flex;gap:12px;justify-content:center;">
+            <a href="{{ url_for('latex_register') }}" style="flex:1;padding:0.8rem;background:#1a1a1a;color:white;border-radius:50px;font-weight:700;text-decoration:none;font-size:0.9rem;transition:all 0.3s ease;" onmouseover="this.style.background='#333'" onmouseout="this.style.background='#1a1a1a'">Yes, Register Me</a>
+            <button onclick="hideBhuModal()" style="flex:1;padding:0.8rem;background:rgba(0,0,0,0.06);border:1px solid rgba(0,0,0,0.1);border-radius:50px;font-weight:600;cursor:pointer;font-size:0.9rem;font-family:inherit;transition:all 0.3s;">No, Go Back</button>
+        </div>
+        <p style="margin-top:1.2rem;font-size:0.8rem;color:#aaa;">Already registered? <a href="{{ url_for('latex_login') }}" style="color:#5a8c78;font-weight:600;text-decoration:none;">Login here</a></p>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
+<script>
+    function showBhuModal() {
+        const modal = document.getElementById('bhuModal');
+        modal.style.display = 'flex';
+    }
+    function hideBhuModal() {
+        document.getElementById('bhuModal').style.display = 'none';
+    }
+    // Close on backdrop click
+    document.getElementById('bhuModal').addEventListener('click', function(e) {
+        if (e.target === this) hideBhuModal();
+    });
+</script>
+<style>
+    @keyframes fadeInModal {
+        from { opacity:0; transform:scale(0.95) translateY(10px); }
+        to   { opacity:1; transform:scale(1) translateY(0); }
+    }
+</style>
 {% endblock %}

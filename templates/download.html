@@ -5,7 +5,7 @@
 {% block content %}
 <div class="row justify-content-center py-5">
     <div class="col-lg-6 text-center">
-        <div class="glass-card">
+        <div class="transparent-card">
             <div class="mb-4">
                 <div class="display-1 text-success">✅</div>
             </div>
@@ -13,7 +13,7 @@
             <p class="text-muted mb-5">Your document has been processed and is ready for download. For your security, the file will be cleared from our temporary memory after download.</p>
             
             <div class="d-grid gap-3 d-md-flex justify-content-center">
-                <a href="{{ url_for('get_file', file_id=file_id) }}" class="btn-premium py-3 px-5">Download Now</a>
+                <a href="{{ url_for('get_file', file_id=file_id) }}" class="btn-blue py-3 px-5">Download Now</a>
                 <a href="{{ url_for('home') }}" class="btn btn-secondary-premium py-3 px-5">Back to Home</a>
             </div>
         </div>

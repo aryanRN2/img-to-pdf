@@ -1,0 +1,188 @@
+{% extends "layout.html" %}
+
+{% block title %}Login | PDF.PRO AI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .login-card {
+        max-width: 400px;
+        margin: 0 auto;
+    }
+
+    .login-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .login-header h2 {
+        font-weight: 800;
+        font-size: 1.8rem;
+        letter-spacing: -0.5px;
+        margin-bottom: 0.3rem;
+    }
+
+    .login-header p {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+
+    .form-group {
+        margin-bottom: 1.2rem;
+    }
+
+    .form-group label {
+        display: block;
+        font-weight: 600;
+        font-size: 0.87rem;
+        margin-bottom: 0.4rem;
+        color: #333;
+    }
+
+    .form-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        border: 1px solid #a5c8ff;
+        border-radius: 12px;
+        font-size: 0.95rem;
+        background: rgba(255,255,255,0.5);
+        backdrop-filter: blur(6px);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        box-sizing: border-box;
+        outline: none;
+        font-family: inherit;
+    }
+
+    .form-input:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+        background: rgba(255,255,255,0.8);
+    }
+
+    .password-wrapper {
+        position: relative;
+    }
+
+    .password-toggle {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #999;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+    }
+
+    .login-btn {
+        width: 100%;
+        padding: 0.85rem;
+        background: #1a1a1a;
+        color: white;
+        border: none;
+        border-radius: 50px;
+        font-weight: 700;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-family: inherit;
+        margin-top: 0.5rem;
+    }
+
+    .login-btn:hover {
+        background: #333;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+    }
+
+    .register-link {
+        text-align: center;
+        margin-top: 1.4rem;
+        font-size: 0.88rem;
+        color: #6c757d;
+    }
+
+    .register-link a {
+        color: #0d6efd;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 0.9rem;
+        padding: 0.5rem 1rem;
+        border: 1px solid #0d6efd;
+        border-radius: 50px;
+        transition: all 0.2s ease;
+    }
+
+    .register-link a:hover {
+        background: rgba(13, 110, 253, 0.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<script>
+    window.PARTICLE_SHAPE = 'login';
+</script>
+
+<div class="row align-items-center" style="min-height: 80vh;">
+    <div class="col-lg-5 offset-lg-1">
+        <div class="transparent-card floating-card fade-in-up">
+            <div class="login-header stagger-1">
+                <h2 style="font-weight: 500; font-size: 1.6rem; margin-bottom: 0;">Login</h2>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show mb-3 stagger-1" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('latex_login') }}" class="stagger-2">
+                <div class="form-group text-start">
+                    <label for="username">Username</label>
+                    <input class="form-input" type="text" id="username" name="username" placeholder="Your roll no. / username" required>
+                </div>
+
+                <div class="form-group text-start">
+                    <label for="password">Password</label>
+                    <div class="password-wrapper">
+                        <input class="form-input" type="password" id="password" name="password" placeholder="Your password" required style="padding-right:3rem;">
+                        <button type="button" class="password-toggle" id="togglePwd" aria-label="Toggle password">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/>
+                                <path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-blue w-100 mt-2">Login</button>
+            </form>
+
+            <div class="register-link stagger-3" style="margin-top: 1.5rem;">
+                <p style="color: #333; font-weight: 600; margin-bottom: 1rem;">Don't have an account?</p>
+                <div class="d-flex justify-content-center gap-2">
+                    <a href="{{ url_for('latex_register') }}">Register Student</a>
+                    <a href="#">Register Company</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.getElementById('togglePwd').addEventListener('click', function() {
+        const pwd = document.getElementById('password');
+        pwd.type = pwd.type === 'password' ? 'text' : 'password';
+    });
+</script>
+{% endblock %}

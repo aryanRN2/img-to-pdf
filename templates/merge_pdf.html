@@ -5,12 +5,12 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-6">
-        <div class="glass-card">
-            <div class="d-flex align-items-center mb-4">
+        <div class="transparent-card text-start fade-in-up">
+            <div class="d-flex align-items-center mb-4 stagger-1">
                 <a href="{{ url_for('home') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius: 50%;">←</a>
                 <h2 class="fw-bold m-0">Merge PDF</h2>
             </div>
-            <p class="text-muted mb-4">Combine multiple PDF documents into a single file instantly.</p>
+            <p class="text-muted mb-4 stagger-2">Combine multiple PDF documents into a single file instantly.</p>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -23,14 +23,14 @@
                 {% endif %}
             {% endwith %}
 
-            <form action="{{ url_for('merge_pdf') }}" method="POST" enctype="multipart/form-data">
+            <form action="{{ url_for('merge_pdf') }}" method="POST" enctype="multipart/form-data" class="stagger-3">
                 <div class="mb-4">
                     <label for="pdfs" class="form-label fw-bold">Upload PDF Files</label>
                     <input class="form-control form-control-premium" type="file" id="pdfs" name="pdfs" accept=".pdf" multiple required>
                     <div class="form-text mt-2">Max total size: 50MB. Files are merged in-memory and deleted after.</div>
                 </div>
                 <div class="d-grid mt-5">
-                    <button type="submit" class="btn-premium py-3">Merge Documents</button>
+                    <button type="submit" class="btn-blue py-3">Merge Documents</button>
                 </div>
             </form>
         </div>
