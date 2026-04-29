@@ -6,3 +6,4 @@ convertapi
 google-genai
 flask-sqlalchemy
 sqlalchemy
+psycopg2-binary

@@ -36,8 +36,16 @@ app.secret_key = "super_secret_key_for_portal"
 # 50 MB limit to prevent DoS attacks
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024 
 
-# Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///portal.db'
+# Database configuration for Vercel compatibility
+if os.environ.get('DATABASE_URL'):
+    # Vercel Postgres usually provides DATABASE_URL
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("postgres://", "postgresql://", 1)
+else:
+    # Fallback for local development or Vercel ephemeral storage
+    # On Vercel, /tmp/ is the only writable directory
+    db_path = "/tmp/portal.db" if os.environ.get('VERCEL') else "portal.db"
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -51,7 +59,15 @@ class LatexUser(db.Model):
 
 # Initialize database
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+    except Exception as e:
+        print(f"Database initialization warning: {e}")
+
+# Health check for Vercel
+@app.route('/health')
+def health_check():
+    return {"status": "healthy"}, 200
 
 # In-memory storage for generated PDFs (UUID -> BytesIO)
 pdf_storage = {}
