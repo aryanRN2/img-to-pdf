@@ -4,6 +4,23 @@ from PIL import Image
 import io
 import uuid
 import PyPDF2
+import convertapi
+import os
+
+convertapi.api_secret = os.environ.get('CONVERTAPI_SECRET', 'your_secret_here')
+
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
+ALLOWED_PDF_EXTENSIONS = {'pdf'}
+ALLOWED_DOC_EXTENSIONS = {'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'}
+
+def allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+def allowed_pdf(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_PDF_EXTENSIONS
+
+def allowed_doc(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_DOC_EXTENSIONS
 
 
 app = Flask(__name__)
@@ -130,6 +147,47 @@ def download_page(file_id):
         flash('File not found or has expired.', 'warning')
         return redirect(url_for('home'))
     return render_template('download.html', file_id=file_id)
+
+@app.route('/document-to-pdf', methods=['GET', 'POST'])
+def document_to_pdf():
+    if request.method == 'POST':
+        if 'document' not in request.files:
+            flash('No file part provided.', 'danger')
+            return redirect(request.url)
+        
+        file = request.files['document']
+        if file.filename == '':
+            flash('No selected file.', 'danger')
+            return redirect(request.url)
+            
+        if file and allowed_doc(file.filename):
+            try:
+                # Process entirely in memory
+                upload_io = io.BytesIO(file.read())
+                upload_io.name = file.filename # ConvertAPI needs filename to determine format
+                ext = file.filename.rsplit('.', 1)[1].lower()
+                
+                result = convertapi.convert('pdf', { 'File': upload_io }, from_format=ext)
+                
+                pdf_bytes = io.BytesIO()
+                result.file.save(pdf_bytes)
+                pdf_bytes.seek(0)
+                
+                file_id = str(uuid.uuid4())
+                pdf_storage[file_id] = {
+                    'data': pdf_bytes,
+                    'name': f"{file.filename.rsplit('.', 1)[0]}.pdf"
+                }
+                return redirect(url_for('download_page', file_id=file_id))
+                
+            except Exception as e:
+                flash(f'Error converting document: {str(e)}. Please check your ConvertAPI configuration.', 'danger')
+                return redirect(request.url)
+        else:
+            flash('Invalid file format. Supported: DOCX, XLSX, PPTX', 'danger')
+            return redirect(request.url)
+            
+    return render_template('document_to_pdf.html')
 
 @app.route('/get-file/<file_id>')
 def get_file(file_id):
