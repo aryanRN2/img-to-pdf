@@ -10,6 +10,7 @@ import re
 import subprocess
 import tempfile
 import base64
+import time
 from google import genai as google_genai
 from google.genai import types as genai_types
 from flask_sqlalchemy import SQLAlchemy
@@ -371,10 +372,34 @@ def image_to_latex():
             )
             import PIL.Image as PILImage
             pil_img = PILImage.open(io.BytesIO(image_bytes))
-            response = client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=[prompt, pil_img]
-            )
+
+            # --- Call Gemini with Exponential Backoff for 429 errors ---
+            def call_gemini_with_backoff(client, prompt, pil_img, max_retries=5):
+                """Calls Gemini API with exponential backoff on 429 rate limit errors."""
+                delay = 4  # Start with 4 seconds
+                for attempt in range(max_retries):
+                    try:
+                        return client.models.generate_content(
+                            model='gemini-2.0-flash',
+                            contents=[prompt, pil_img]
+                        )
+                    except Exception as e:
+                        err_str = str(e)
+                        if '429' in err_str or 'RESOURCE_EXHAUSTED' in err_str:
+                            if attempt < max_retries - 1:
+                                wait_time = delay * (2 ** attempt)  # 4s, 8s, 16s, 32s, 64s
+                                print(f"Rate limit hit. Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                                time.sleep(wait_time)
+                            else:
+                                raise Exception(
+                                    f"Rate limit exceeded after {max_retries} retries. "
+                                    "Your free API quota may be exhausted for today. "
+                                    "Please try again in a few minutes or use a different API key."
+                                )
+                        else:
+                            raise  # Re-raise non-rate-limit errors immediately
+
+            response = call_gemini_with_backoff(client, prompt, pil_img)
             raw_latex = response.text
 
             # --- Step 2: Clean & extract LaTeX ---
