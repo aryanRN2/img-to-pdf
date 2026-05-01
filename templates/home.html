@@ -5,45 +5,58 @@
 {% block extra_css %}
 <style>
     .hero-section {
-        padding-top: 100px;
+        padding-top: 80px;
         padding-bottom: 60px;
         text-align: center;
-        background: radial-gradient(circle at center, rgba(13, 110, 253, 0.03) 0%, transparent 70%);
     }
 
     .hero-headline {
-        font-family: 'Google Sans Flex', sans-serif;
-        font-weight: 500;
-        font-size: 5.5rem;
-        letter-spacing: -3.5px;
-        line-height: 1.05;
+        font-family: var(--font-main);
+        font-weight: 800;
+        font-size: 4rem;
+        letter-spacing: -2.5px;
+        line-height: 1.1;
         color: #1a1a1a;
-        margin-bottom: 50px;
-        max-width: 1000px;
+        margin-bottom: 30px;
+        max-width: 900px;
         margin-left: auto;
         margin-right: auto;
-        animation: fadeInUp 1s ease-out;
+    }
+
+    .hero-subheadline {
+        font-size: 1.15rem;
+        color: #666;
+        margin-bottom: 45px;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+        line-height: 1.6;
     }
 
     @media (max-width: 768px) {
+        .hero-section {
+            padding-top: 50px;
+        }
         .hero-headline {
-            font-size: 3.5rem;
-            letter-spacing: -2px;
+            font-size: 2.8rem;
+            letter-spacing: -1.5px;
+            padding: 0 1rem;
         }
     }
 
     .hero-buttons {
         display: flex;
-        gap: 15px;
+        gap: 12px;
         justify-content: center;
         flex-wrap: wrap;
-        animation: fadeInUp 1.2s ease-out;
+        max-width: 700px;
+        margin: 0 auto;
     }
 
     .btn-portal-primary {
         background: #1a1a1a;
         color: white;
-        padding: 14px 32px;
+        padding: 12px 28px;
         border-radius: 50px;
         font-weight: 600;
         text-decoration: none;
@@ -56,26 +69,17 @@
     .btn-portal-primary:hover {
         background: #333;
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.12);
         color: white;
     }
 
-    .btn-portal-primary svg {
-        margin-right: 10px;
-        transition: transform 0.3s ease;
-    }
-
-    .btn-portal-primary:hover svg {
-        transform: translateX(4px);
-    }
-
     .btn-portal-glass {
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.7);
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(124, 181, 157, 0.3);
+        border: 1px solid rgba(0, 0, 0, 0.08);
         color: #1a1a1a;
-        padding: 14px 32px;
+        padding: 12px 28px;
         border-radius: 50px;
         font-weight: 600;
         text-decoration: none;
@@ -83,23 +87,30 @@
     }
 
     .btn-portal-glass:hover {
-        background: rgba(167, 201, 186, 0.4);
+        background: rgba(255, 255, 255, 0.9);
         transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(124, 181, 157, 0.15);
-        border-color: rgba(124, 181, 157, 0.6);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+        border-color: rgba(0, 0, 0, 0.15);
         color: #1a1a1a;
     }
 
-    @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(30px); }
-        to { opacity: 1; transform: translateY(0); }
+    @media (max-width: 480px) {
+        .hero-buttons {
+            flex-direction: column;
+            padding: 0 2rem;
+        }
+        .btn-portal-primary, .btn-portal-glass {
+            width: 100%;
+            justify-content: center;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<section class="hero-section">
-    <h1 class="hero-headline">Easily convert images to PDF<br>and merge your documents</h1>
+<section class="hero-section fade-in-up">
+    <h1 class="hero-headline">Seamless Document Processing for Everyone.</h1>
+    <p class="hero-subheadline">Convert, merge, and transform your documents with professional-grade tools. Fast, secure, and entirely in-memory.</p>
     
     <div class="hero-buttons">
         <a href="{{ url_for('image_to_pdf') }}" class="btn-portal-primary">
@@ -111,10 +122,20 @@
         </a>
         <a href="{{ url_for('merge_pdf') }}" class="btn-portal-glass">Merge PDF</a>
         <a href="{{ url_for('document_to_pdf') }}" class="btn-portal-glass">Document to PDF</a>
-        <button type="button" class="btn-portal-glass d-inline-flex align-items-center" id="latexAiBtn" disabled style="opacity: 0.6; cursor: not-allowed;">
-            Image to LaTeX
-            <span class="badge badge-coming-soon ms-2">Under Construction</span>
-        </button>
+        {% if current_user.is_authenticated and current_user.status == 'approved' %}
+            <button class="btn-portal-glass d-inline-flex align-items-center" disabled style="opacity: 0.6; cursor: not-allowed;">
+                Image to LaTeX
+                <span class="badge badge-coming-soon ms-2">Updating...</span>
+            </button>
+            <a href="{{ url_for('latex_logout') }}" class="btn-portal-glass d-inline-flex align-items-center" style="background: rgba(255, 0, 0, 0.05); border-color: rgba(255, 0, 0, 0.2); color: #d9534f;">
+                Logout
+            </a>
+        {% else %}
+            <button type="button" class="btn-portal-glass d-inline-flex align-items-center" style="opacity: 0.6; cursor: not-allowed;">
+                Image to LaTeX
+                <span class="badge badge-coming-soon ms-2">Under Development</span>
+            </button>
+        {% endif %}
     </div>
 </section>
 <!-- BHU Confirmation Modal -->

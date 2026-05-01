@@ -1,0 +1,130 @@
+{% extends "layout.html" %}
+
+{% block title %}Processing... | PDF.PRO{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="transparent-card text-center fade-in-up" style="max-width: 500px;">
+            <div id="status-icon" class="mb-4">
+                <div class="spinner-border" style="width: 2.5rem; height: 2.5rem; border-width: 0.2rem; color: #1a1a1a;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+            
+            <h2 id="status-title" class="fw-bold mb-2" style="letter-spacing: -0.5px;">Processing...</h2>
+            <p id="status-message" class="text-muted mb-4" style="font-size: 0.95rem;">Preparing your documents</p>
+            
+            <div class="progress mb-4" style="height: 6px; border-radius: 10px; background: rgba(0,0,0,0.05);">
+                <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%; background: #1a1a1a; transition: width 0.5s ease;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            
+            <div id="steps-container" class="text-start mb-4" style="font-size: 0.9rem;">
+                <!-- Steps will be injected here -->
+            </div>
+
+            <div id="error-container" class="alert alert-danger mt-4 d-none" role="alert" style="border-radius: 1rem; border: none; background: rgba(220, 53, 69, 0.1); color: #dc3545;">
+                <h6 class="fw-bold mb-2">Something went wrong</h6>
+                <p id="error-message" class="small mb-3"></p>
+                <a href="{{ url_for('home') }}" class="btn btn-sm btn-danger px-3" style="border-radius: 50px;">Return Home</a>
+            </div>
+            
+            <div id="success-container" class="mt-4 d-none">
+                <a id="download-link" href="#" class="btn-blue py-3 w-100">Download Result</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const jobId = "{{ job_id }}";
+    const statusTitle = document.getElementById('status-title');
+    const statusMessage = document.getElementById('status-message');
+    const progressBar = document.getElementById('progress-bar');
+    const stepsContainer = document.getElementById('steps-container');
+    const errorContainer = document.getElementById('error-container');
+    const errorMessage = document.getElementById('error-message');
+    const successContainer = document.getElementById('success-container');
+    const downloadLink = document.getElementById('download-link');
+    const statusIcon = document.getElementById('status-icon');
+
+    function updateUI(data) {
+        if (data.error) {
+            statusTitle.innerText = "Error Occurred";
+            statusMessage.innerText = "We encountered a problem on Step " + (data.current_step + 1);
+            statusIcon.innerHTML = '<div class="display-1 text-danger">❌</div>';
+            progressBar.classList.remove('progress-bar-animated');
+            progressBar.classList.add('bg-danger');
+            errorContainer.classList.remove('d-none');
+            errorMessage.innerText = data.error;
+            return false; // Stop polling
+        }
+
+        const percent = (data.current_step / data.total_steps) * 100;
+        progressBar.style.width = percent + "%";
+        progressBar.setAttribute('aria-valuenow', percent);
+
+        statusMessage.innerText = data.message;
+
+        // Update steps list
+        stepsContainer.innerHTML = '';
+        data.steps.forEach((step, index) => {
+            const isCompleted = index < data.current_step;
+            const isCurrent = index === data.current_step;
+            
+            const stepDiv = document.createElement('div');
+            stepDiv.className = 'd-flex align-items-center mb-2 ' + (isCompleted ? 'text-success' : (isCurrent ? 'fw-bold text-primary' : 'text-muted'));
+            
+            let icon = '○';
+            if (isCompleted) icon = '✓';
+            if (isCurrent) icon = '●';
+            
+            stepDiv.innerHTML = `<span class="me-3">${icon}</span> <span>Step ${index + 1}: ${step}</span>`;
+            stepsContainer.appendChild(stepDiv);
+        });
+
+        if (data.status === 'requires_edit') {
+            statusTitle.innerText = "Text Extracted!";
+            statusMessage.innerText = "Redirecting to editor...";
+            statusIcon.innerHTML = '<div class="display-1 text-info">📝</div>';
+            progressBar.style.width = "100%";
+            progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            progressBar.classList.add('bg-info');
+            window.location.href = `/edit-latex/${jobId}`;
+            return false; // Stop polling
+        }
+
+        if (data.status === 'finished') {
+            statusTitle.innerText = "Success!";
+            statusMessage.innerText = "Your file is ready.";
+            statusIcon.innerHTML = '<div class="display-3 mb-2">✅</div>';
+            progressBar.style.width = "100%";
+            successContainer.classList.remove('d-none');
+            downloadLink.href = "{{ url_for('download_page', file_id='') }}" + data.file_id;
+            return false; // Stop polling
+        }
+
+        return true; // Continue polling
+    }
+
+    async function pollStatus() {
+        try {
+            const response = await fetch(`/api/job-status/${jobId}`);
+            const data = await response.json();
+            
+            const continuePolling = updateUI(data);
+            if (continuePolling) {
+                setTimeout(pollStatus, 1000);
+            }
+        } catch (err) {
+            console.error("Polling error:", err);
+            setTimeout(pollStatus, 2000);
+        }
+    }
+
+    // Start polling
+    pollStatus();
+</script>
+{% endblock %}

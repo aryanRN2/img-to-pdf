@@ -5,16 +5,16 @@
 {% block content %}
 <div class="row justify-content-center py-5">
     <div class="col-lg-6 text-center">
-        <div class="transparent-card">
+        <div class="transparent-card text-center fade-in-up" style="max-width: 550px;">
             <div class="mb-4">
-                <div class="display-1 text-success">✅</div>
+                <div class="display-3">🎉</div>
             </div>
-            <h2 class="fw-bold mb-3">Conversion Successful!</h2>
-            <p class="text-muted mb-5">Your document has been processed and is ready for download. For your security, the file will be cleared from our temporary memory after download.</p>
+            <h2 class="fw-bold mb-2" style="letter-spacing: -1px;">Conversion Complete</h2>
+            <p class="text-muted mb-5" style="line-height: 1.6;">Your document has been processed and is ready for download. It will be automatically cleared from our temporary memory after download for your security.</p>
             
-            <div class="d-grid gap-3 d-md-flex justify-content-center">
-                <a href="{{ url_for('get_file', file_id=file_id) }}" class="btn-blue py-3 px-5">Download Now</a>
-                <a href="{{ url_for('home') }}" class="btn btn-secondary-premium py-3 px-5">Back to Home</a>
+            <div class="d-grid gap-3">
+                <a href="{{ url_for('get_file', file_id=file_id) }}" class="btn-blue py-3">Download Your File</a>
+                <a href="{{ url_for('home') }}" class="btn-portal-glass py-3" style="border-radius: 50px;">Convert Another File</a>
             </div>
         </div>
     </div>

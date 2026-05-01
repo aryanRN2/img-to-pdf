@@ -4,79 +4,6 @@
 
 {% block extra_css %}
 <style>
-    .upload-zone {
-        border: 2px dashed rgba(124, 181, 157, 0.5);
-        border-radius: 1.5rem;
-        padding: 3rem 2rem;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        background: rgba(255, 255, 255, 0.05);
-        position: relative;
-    }
-
-    .upload-zone:hover,
-    .upload-zone.drag-over {
-        border-color: rgba(124, 181, 157, 0.9);
-        background: rgba(167, 201, 186, 0.1);
-    }
-
-    .upload-zone input[type="file"] {
-        position: absolute;
-        inset: 0;
-        opacity: 0;
-        cursor: pointer;
-        width: 100%;
-        height: 100%;
-    }
-
-    .upload-icon {
-        width: 64px;
-        height: 64px;
-        margin: 0 auto 1rem;
-        background: rgba(124, 181, 157, 0.15);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #7cb59d;
-    }
-
-    .upload-zone h4 {
-        font-weight: 600;
-        color: #1a1a1a;
-        margin-bottom: 0.5rem;
-    }
-
-    .upload-zone p {
-        color: #6c757d;
-        font-size: 0.9rem;
-        margin-bottom: 0;
-    }
-
-    .preview-box {
-        display: none;
-        margin-top: 1.5rem;
-        border-radius: 1rem;
-        overflow: hidden;
-        border: 1px solid rgba(124, 181, 157, 0.3);
-    }
-
-    .preview-box img {
-        width: 100%;
-        max-height: 300px;
-        object-fit: contain;
-        background: rgba(255,255,255,0.5);
-    }
-
-    .preview-label {
-        padding: 0.5rem 1rem;
-        font-size: 0.8rem;
-        color: #6c757d;
-        background: rgba(255,255,255,0.1);
-        border-top: 1px solid rgba(124, 181, 157, 0.2);
-    }
-
     .ai-badge {
         display: inline-flex;
         align-items: center;
@@ -86,55 +13,36 @@
         color: #5a8c78;
         border-radius: 50px;
         font-size: 0.75rem;
-        font-weight: 600;
+        font-weight: 700;
         padding: 4px 12px;
         margin-bottom: 1.5rem;
         letter-spacing: 0.5px;
         text-transform: uppercase;
     }
 
-    .ai-badge svg {
-        width: 14px;
-        height: 14px;
-    }
-
     .tip-card {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(0, 0, 0, 0.03);
+        border: 1px solid rgba(0, 0, 0, 0.05);
         border-radius: 1rem;
-        padding: 1rem 1.2rem;
-        margin-top: 1.5rem;
-        font-size: 0.85rem;
+        padding: 1.2rem;
+        margin-top: 2rem;
+        font-size: 0.88rem;
         color: #555;
     }
 
     .tip-card strong {
         color: #1a1a1a;
+        display: block;
+        margin-bottom: 0.5rem;
     }
 
     .tip-card ul {
-        margin: 0.5rem 0 0;
+        margin: 0;
         padding-left: 1.2rem;
     }
 
-    .form-input {
-        width: 100%;
-        padding: 0.85rem 1rem;
-        border: 1.5px solid rgba(0,0,0,0.1);
-        border-radius: 12px;
-        font-size: 0.95rem;
-        background: rgba(255,255,255,0.5);
-        backdrop-filter: blur(6px);
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        box-sizing: border-box;
-        outline: none;
-        font-family: inherit;
-    }
-
-    .form-input:focus {
-        border-color: rgba(124, 181, 157, 0.7);
-        box-shadow: 0 0 0 3px rgba(124, 181, 157, 0.15);
-        background: rgba(255,255,255,0.8);
+    .tip-card li {
+        margin-bottom: 0.3rem;
     }
 </style>
 {% endblock %}
@@ -168,44 +76,26 @@
                 {% endif %}
             {% endwith %}
 
-            <form action="{{ url_for('image_to_latex') }}" method="POST" enctype="multipart/form-data" id="latexForm" class="stagger-2">
-                <div class="form-group mb-4">
-                    <label for="api_key" style="font-weight:700; color:#1a1a1a; margin-bottom:0.5rem; display:block;">Gemini API Key</label>
-                    <div style="position:relative;">
-                        <input type="password" id="api_key" name="api_key" class="form-input" placeholder="Paste your API key here..." required style="padding-right: 3rem;">
-                        <div style="position:absolute; right:12px; top:50%; transform:translateY(-50%); color:#aaa; font-size:0.8rem; pointer-events:none;">
+            <form action="{{ url_for('image_to_latex') }}" method="POST" id="latexForm" class="stagger-2">
+                    <label for="api_key" class="form-label fw-600">Gemini API Key</label>
+                    <div class="password-wrapper">
+                        <input type="password" id="api_key" name="api_key" class="form-control-premium" placeholder="Paste your key here..." required style="padding-right: 3rem;">
+                        <div style="position:absolute; right:15px; top:50%; transform:translateY(-50%); pointer-events:none;">
                             🔑
                         </div>
                     </div>
-                    <p style="font-size:0.75rem; color:#6c757d; margin-top:0.4rem;">
-                        Don't have one? Get it for free at <a href="https://aistudio.google.com" target="_blank" style="color:#5a8c78; font-weight:600;">AI Studio</a>. 
-                        <br><span style="color:#999;">(Your key is used only for this request and never stored)</span>
+                    <p class="form-text mt-2" style="font-size:0.8rem;">
+                        Need a key? Get it free at <a href="https://aistudio.google.com" target="_blank" style="font-weight:700; color:#1a1a1a;">AI Studio</a>. 
+                        Keys are processed securely and never stored.
                     </p>
-                </div>
-
-                <div class="upload-zone" id="uploadZone">
-                    <input type="file" id="image" name="image" accept=".jpg,.jpeg,.png,.webp" required>
-                    <div class="upload-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-                            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-                            <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-                        </svg>
-                    </div>
-                    <h4>Drop your image here</h4>
-                    <p>or click to browse &nbsp;·&nbsp; JPG, PNG, WEBP &nbsp;·&nbsp; Max 50MB</p>
-                </div>
-
-                <div class="preview-box" id="previewBox">
-                    <img id="previewImg" src="" alt="Preview">
-                    <div class="preview-label" id="previewLabel">No file selected</div>
                 </div>
 
                 <div class="d-grid mt-4">
                     <button type="submit" class="btn-blue py-3" id="submitBtn">
-                        <span id="btnText">Convert to LaTeX PDF</span>
+                        <span id="btnText">Verify Key & Select Model</span>
                         <span id="btnSpinner" class="d-none">
                             <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                            Processing with AI…
+                            Checking Models…
                         </span>
                     </button>
                 </div>
@@ -227,37 +117,15 @@
 
 {% block extra_js %}
 <script>
-    const imageInput = document.getElementById('image');
-    const previewBox = document.getElementById('previewBox');
-    const previewImg = document.getElementById('previewImg');
-    const previewLabel = document.getElementById('previewLabel');
-    const uploadZone = document.getElementById('uploadZone');
     const latexForm = document.getElementById('latexForm');
     const btnText = document.getElementById('btnText');
     const btnSpinner = document.getElementById('btnSpinner');
-
-    imageInput.addEventListener('change', () => {
-        const file = imageInput.files[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            previewImg.src = url;
-            previewLabel.textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
-            previewBox.style.display = 'block';
-        }
-    });
-
-    // Drag and drop highlight
-    uploadZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadZone.classList.add('drag-over');
-    });
-    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-    uploadZone.addEventListener('drop', () => uploadZone.classList.remove('drag-over'));
 
     // Show spinner on submit
     latexForm.addEventListener('submit', () => {
         btnText.classList.add('d-none');
         btnSpinner.classList.remove('d-none');
+        document.getElementById('submitBtn').disabled = true;
     });
 </script>
 {% endblock %}
