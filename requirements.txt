@@ -5,6 +5,7 @@ Werkzeug==3.1.3
 convertapi
 google-genai
 flask-sqlalchemy
+flask-login
 sqlalchemy
 psycopg2-binary
 tenacity
