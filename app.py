@@ -829,23 +829,49 @@ def process_compile_latex_task(job_id, latex_code):
         job['current_step'] = 3
         job['message'] = 'Compiling LaTeX to PDF (this may take a minute)...'
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tex_path = os.path.join(tmpdir, 'output.tex')
-            pdf_path = os.path.join(tmpdir, 'output.pdf')
-            with open(tex_path, 'w', encoding='utf-8') as f:
-                f.write(latex_code)
-            try:
+        pdf_output_bytes = None
+        
+        # Strategy 1: Try local pdflatex (Local Dev)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tex_path = os.path.join(tmpdir, 'output.tex')
+                pdf_path = os.path.join(tmpdir, 'output.pdf')
+                with open(tex_path, 'w', encoding='utf-8') as f:
+                    f.write(latex_code)
                 subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', tmpdir, tex_path],
                              capture_output=True, text=True, timeout=60)
-            except subprocess.TimeoutExpired:
-                job['error'] = "PDF compilation timed out."
+                if os.path.exists(pdf_path):
+                    with open(pdf_path, 'rb') as f:
+                        pdf_output_bytes = io.BytesIO(f.read())
+        except Exception:
+            pass # Fallback to Strategy 2
+
+        # Strategy 2: ConvertAPI (Cloud / Vercel)
+        if not pdf_output_bytes:
+            import convertapi
+            secret = os.environ.get('CONVERTAPI_SECRET')
+            if not secret or secret == 'your_convertapi_secret_here':
+                job['error'] = "Cloud PDF compilation requires a valid CONVERTAPI_SECRET in Vercel settings."
                 return
-            if not os.path.exists(pdf_path):
-                job['error'] = "PDF compilation failed. Check your LaTeX syntax."
-                return
-            with open(pdf_path, 'rb') as f:
-                pdf_output_bytes = io.BytesIO(f.read())
-            pdf_output_bytes.seek(0)
+            
+            convertapi.api_secret = secret
+            job['message'] = 'Local compiler missing. Using Cloud Compiler (ConvertAPI)...'
+            
+            with tempfile.NamedTemporaryFile(suffix='.tex', mode='w', delete=False) as tf:
+                tf.write(latex_code)
+                tf_path = tf.name
+            
+            try:
+                result = convertapi.convert('pdf', {'File': tf_path}, from_format='tex')
+                pdf_output_bytes = io.BytesIO(result.file.url_to_bytes())
+            finally:
+                if os.path.exists(tf_path): os.remove(tf_path)
+
+        if not pdf_output_bytes:
+            job['error'] = "PDF compilation failed. Please check your LaTeX syntax or API key."
+            return
+
+        pdf_output_bytes.seek(0)
 
         job['current_step'] = 3
         job['message'] = 'Finalizing your document...'
