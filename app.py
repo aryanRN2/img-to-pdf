@@ -752,12 +752,13 @@ def process_text_to_latex_task(job_id, text_content, api_key, model_name, provid
             job.current_step = 2
             job.message = 'RN-Vision-Transformer-200B is synthesizing LaTeX code...'
             db.session.commit()
-        if provider == 'nvidia':
-            from langchain_nvidia_ai_endpoints import ChatNVIDIA
-            llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
-        else:
-            # Using google-genai SDK directly
-            pass
+
+            if provider == 'nvidia':
+                from langchain_nvidia_ai_endpoints import ChatNVIDIA
+                llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
+            else:
+                # Using google-genai SDK directly
+                pass
 
         def call_llm():
             if provider == 'nvidia':
