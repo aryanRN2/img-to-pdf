@@ -89,21 +89,6 @@ class LatexUser(UserMixin, db.Model):
     password = db.Column(db.String(256), nullable=False)
     status = db.Column(db.String(20), default='pending') # 'pending' or 'approved'
 
-# Job Model for Vercel Stability
-class LatexJob(db.Model):
-    id = db.Column(db.String(50), primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), default='queued')
-    current_step = db.Column(db.Integer, default=0)
-    total_steps = db.Column(db.Integer, default=4)
-    message = db.Column(db.Text)
-    image_data = db.Column(db.LargeBinary) # Store image in DB for Vercel
-    extracted_text = db.Column(db.Text)
-    extracted_latex = db.Column(db.Text)
-    file_id = db.Column(db.String(50))
-    error = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=time.time)
-
 # Initialize database
 with app.app_context():
     try:
@@ -234,17 +219,9 @@ def processing_page(job_id):
 
 @app.route('/api/job-status/<job_id>')
 def job_status_api(job_id):
-    job = LatexJob.query.get(job_id)
-    if not job:
+    if job_id not in job_storage:
         return {"error": "Job not found"}, 404
-    return {
-        "status": job.status,
-        "current_step": job.current_step,
-        "total_steps": job.total_steps,
-        "message": job.message,
-        "error": job.error,
-        "file_id": job.file_id
-    }
+    return job_storage[job_id]
 
 @app.route('/merge-pdf', methods=['GET', 'POST'])
 def merge_pdf():
@@ -620,25 +597,28 @@ def image_to_latex_upload():
             flash('Invalid file type. Please upload a JPG, PNG, or WEBP image.', 'danger')
             return redirect(request.url)
 
-        image_data = file.read()
-        
-        # Create a persistent job in the database
         job_id = str(uuid.uuid4())
-        new_job = LatexJob(
-            id=job_id,
-            user_id=current_user.id,
-            status='queued',
-            current_step=0,
-            total_steps=4,
-            message=f'Initializing RN-Vision-Transformer-200B...',
-            image_data=image_data
-        )
-        db.session.add(new_job)
-        db.session.commit()
+        image_id = str(uuid.uuid4())
+        image_data = file.read()
+        image_storage[image_id] = image_data
+
+        job_storage[job_id] = {
+            'status': 'queued',
+            'current_step': 0,
+            'total_steps': 4,
+            'steps': ['Extracting Structured Text', 'Awaiting Text Review', 'Converting to LaTeX', 'Awaiting Compilation'],
+            'message': f'Initializing {model_name}...',
+            'error': None,
+            'file_id': None,
+            'extracted_text': None,
+            'extracted_latex': None,
+            'image_id': image_id,
+            'type': 'image_to_latex'
+        }
 
         api_key = session['latex_api_key']
         model_name = session['latex_model']
-        provider = session.get('latex_provider', 'nvidia')
+        provider = session.get('latex_provider', 'gemini')
 
         thread = threading.Thread(target=process_image_to_text_task, args=(job_id, image_data, api_key, model_name, provider))
         thread.start()
@@ -646,119 +626,105 @@ def image_to_latex_upload():
                 
     return render_template('image_to_latex_upload.html', model_name=model_name)
 
-def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='nvidia'):
-    with app.app_context():
-        try:
-            from langchain_core.messages import HumanMessage
-            from langchain_core.output_parsers import StrOutputParser
-            
-            job = LatexJob.query.get(job_id)
-            if not job: return
-            
-            job.current_step = 0
-            job.message = 'RN-Vision-Transformer-200B is performing deep architectural analysis...'
-            db.session.commit()
-            
-            # Instantiate LLM
+def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='gemini'):
+    try:
+        from langchain_core.messages import HumanMessage
+        from langchain_core.output_parsers import StrOutputParser
+        
+        job = job_storage[job_id]
+        job['current_step'] = 0
+        job['message'] = 'RN-Vision-Transformer-200B is performing deep architectural analysis...'
+        
+        # Instantiate LLM
+        if provider == 'nvidia':
+            from langchain_nvidia_ai_endpoints import ChatNVIDIA
+            vision_llm = ChatNVIDIA(model=model_name, nvidia_api_key=api_key, temperature=0.1)
+        else:
+            # Using google-genai SDK directly
+            pass
+
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        
+        vision_prompt = (
+            "You are an expert academic scribe. Your task is to extract all content from this handwritten image with absolute fidelity to the logical structure.\n\n"
+            "CRITICAL: Capture all mathematical symbols (summations, limits, integrals, fractions, etc.) using standard LaTeX notation (e.g., use \\sum_{k=0}^{\\infty} for summations).\n\n"
+            "Smartly identify:\n"
+            "1. Theorems and their corresponding Proofs (maintain the logical link).\n"
+            "2. Mathematical derivations, ensuring every step and every symbol is captured perfectly.\n"
+            "3. Definitions and Examples.\n"
+            "4. Page structure (headings, bullet points, numbered lists).\n\n"
+            "Output the result in clearly structured plain text. Use [Theorem], [Proof], [Definition] markers to indicate sections. "
+            "Ensure no content from the page is missed."
+        )
+
+        vision_message = HumanMessage(
+            content=[
+                {"type": "text", "text": vision_prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+            ]
+        )
+
+        def call_vision():
             if provider == 'nvidia':
-                from langchain_nvidia_ai_endpoints import ChatNVIDIA
-                vision_llm = ChatNVIDIA(model=model_name, nvidia_api_key=api_key, temperature=0.1)
+                res = vision_llm.invoke([vision_message])
+                return res.content
             else:
-                # Direct Gemini integration
-                pass
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=api_key)
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=[
+                        vision_prompt,
+                        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+                    ]
+                )
+                return response.text
 
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            
-            vision_prompt = (
-                "You are an expert academic scribe. Your task is to extract all content from this handwritten image with absolute fidelity to the logical structure.\n\n"
-                "CRITICAL: Capture all mathematical symbols (summations, limits, integrals, fractions, etc.) using standard LaTeX notation (e.g., use \\sum_{k=0}^{\\infty} for summations).\n\n"
-                "Smartly identify:\n"
-                "1. Theorems and their corresponding Proofs (maintain the logical link).\n"
-                "2. Mathematical derivations, ensuring every step and every symbol is captured perfectly.\n"
-                "3. Definitions and Examples.\n"
-                "4. Page structure (headings, bullet points, numbered lists).\n\n"
-                "Output the result in clearly structured plain text. Use [Theorem], [Proof], [Definition] markers to indicate sections. "
-                "Ensure no content from the page is missed."
-            )
-
-            vision_message = HumanMessage(
-                content=[
-                    {"type": "text", "text": vision_prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-                ]
-            )
-
-            def call_vision():
-                if provider == 'nvidia':
-                    res = vision_llm.invoke([vision_message])
-                    return res.content
-                else:
-                    from google import genai
-                    from google.genai import types
-                    client = genai.Client(api_key=api_key)
-                    response = client.models.generate_content(
-                        model="gemini-1.5-flash",
-                        contents=[
-                            vision_prompt,
-                            types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-                        ]
-                    )
-                    return response.text
-
-            extracted_text = call_vision()
-            job.extracted_text = extracted_text
-            job.current_step = 1
-            job.status = 'requires_text_review'
-            job.message = 'Extraction complete. Please review the text.'
-            db.session.commit()
-        except Exception as e:
-            job = LatexJob.query.get(job_id)
-            if job:
-                job.error = str(e)
-                db.session.commit()
+        extracted_text = call_vision()
+        job['extracted_text'] = extracted_text
+        job['current_step'] = 1
+        job['status'] = 'requires_text_review'
+        job['message'] = 'Extraction complete. Please review the text.'
+    except Exception as e:
+        job_storage[job_id]['error'] = str(e)
 
 @app.route('/review-text/<job_id>', methods=['GET', 'POST'])
 def review_text(job_id):
-    job = LatexJob.query.get(job_id)
-    if not job: return redirect(url_for('home'))
+    if job_id not in job_storage: return redirect(url_for('home'))
+    job = job_storage[job_id]
     
     if request.method == 'POST':
         edited_text = request.form.get('text_content', '')
-        job.extracted_text = edited_text
-        job.status = 'queued'
-        job.current_step = 2
-        job.message = 'Converting reviewed text to LaTeX...'
-        db.session.commit()
+        job['extracted_text'] = edited_text
+        job['status'] = 'queued'
+        job['current_step'] = 2
+        job['message'] = 'Converting reviewed text to LaTeX...'
         
         api_key = session.get('latex_api_key')
         model_name = session.get('latex_model')
-        provider = session.get('latex_provider', 'nvidia')
+        provider = session.get('latex_provider', 'gemini')
         
         thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, edited_text, api_key, model_name, provider))
         thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
         
-    return render_template('review_text.html', job_id=job_id, text_content=job.extracted_text)
+    return render_template('review_text.html', job_id=job_id, text_content=job['extracted_text'], image_id=job.get('image_id'))
 
-def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='nvidia'):
-    with app.app_context():
-        try:
-            from langchain_core.prompts import ChatPromptTemplate
-            from langchain_core.output_parsers import StrOutputParser
-            
-            job = LatexJob.query.get(job_id)
-            if not job: return
-            
-            job.current_step = 2
-            job.message = 'RN-Vision-Transformer-200B is synthesizing LaTeX code...'
-            db.session.commit()
-
-            if provider == 'nvidia':
-                from langchain_nvidia_ai_endpoints import ChatNVIDIA
-                llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
-            else:
-                # Using google-genai SDK directly
-                pass
+def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='gemini'):
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        
+        job = job_storage[job_id]
+        job['current_step'] = 2
+        job['message'] = 'RN-Vision-Transformer-200B is synthesizing LaTeX code...'
+        if provider == 'nvidia':
+            from langchain_nvidia_ai_endpoints import ChatNVIDIA
+            llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
+        else:
+            # Using google-genai SDK directly
+            pass
 
         def call_llm():
             if provider == 'nvidia':
@@ -802,74 +768,66 @@ def process_text_to_latex_task(job_id, text_content, api_key, model_name, provid
         latex_code = re.sub(r'^```(?:latex)?\n?', '', latex_code, flags=re.IGNORECASE)
         latex_code = re.sub(r'```$', '', latex_code.strip())
 
-        job.extracted_latex = latex_code
-        job.current_step = 3
-        job.status = 'requires_latex_review'
-        job.message = 'LaTeX conversion complete. Final review required.'
-        db.session.commit()
+        job['extracted_latex'] = latex_code
+        job['current_step'] = 3
+        job['status'] = 'requires_latex_review'
+        job['message'] = 'LaTeX conversion complete. Final review required.'
     except Exception as e:
-        job = LatexJob.query.get(job_id)
-        if job:
-            job.error = str(e)
-            db.session.commit()
+        job_storage[job_id]['error'] = str(e)
 
 @app.route('/review-latex/<job_id>', methods=['GET', 'POST'])
 def review_latex(job_id):
-    job = LatexJob.query.get(job_id)
-    if not job: return redirect(url_for('home'))
+    if job_id not in job_storage: return redirect(url_for('home'))
+    job = job_storage[job_id]
     
     if request.method == 'POST':
         edited_latex = request.form.get('latex_code', '')
-        job.extracted_latex = edited_latex
-        job.status = 'queued'
-        job.current_step = 3
-        job.message = 'Compiling final PDF...'
-        db.session.commit()
+        job['extracted_latex'] = edited_latex
+        job['status'] = 'queued'
+        job['current_step'] = 3
+        job['message'] = 'Compiling final PDF...'
         
         thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
         thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
         
-    return render_template('review_latex.html', job_id=job_id, latex_code=job.extracted_latex)
+    return render_template('review_latex.html', job_id=job_id, latex_code=job['extracted_latex'])
 
-@app.route('/view-image/<job_id>')
-def view_image(job_id):
-    job = LatexJob.query.get(job_id)
-    if not job or not job.image_data:
-        return "Image not found", 404
-    return send_file(io.BytesIO(job.image_data), mimetype='image/jpeg')
+@app.route('/view-image/<image_id>')
+def view_image(image_id):
+    if image_id not in image_storage: return "Image not found", 404
+    return send_file(io.BytesIO(image_storage[image_id]), mimetype='image/jpeg')
 
 @app.route('/edit-latex/<job_id>', methods=['GET', 'POST'])
 def edit_latex(job_id):
-    job = LatexJob.query.get(job_id)
-    if not job:
+    if job_id not in job_storage:
         flash('Invalid or expired job session.', 'danger')
         return redirect(url_for('home'))
+        
+    job = job_storage[job_id]
     
     if request.method == 'POST':
         edited_latex = request.form.get('latex_code', '')
-        job.extracted_latex = edited_latex
-        job.status = 'queued'
-        job.current_step = 0
-        job.total_steps = 2
-        job.message = 'Compiling LaTeX to PDF...'
-        db.session.commit()
+        
+        job['extracted_latex'] = edited_latex
+        job['status'] = 'queued'
+        job['current_step'] = 0
+        job['total_steps'] = 2
+        job['steps'] = ['Compiling PDF', 'Finalizing Results']
+        job['message'] = 'Compiling LaTeX to PDF...'
         
         thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
         thread.start()
         
         return redirect(url_for('processing_page', job_id=job_id))
         
-    return render_template('edit_latex.html', job_id=job_id, latex_code=job.extracted_latex or '')
+    return render_template('edit_latex.html', job_id=job_id, latex_code=job.get('extracted_latex', ''))
 
 def process_compile_latex_task(job_id, latex_code):
-    with app.app_context():
-        try:
-            job = LatexJob.query.get(job_id)
-            if not job: return
-            job.current_step = 3
-            job.message = 'Compiling LaTeX to PDF (this may take a minute)...'
-            db.session.commit()
+    try:
+        job = job_storage[job_id]
+        job['current_step'] = 3
+        job['message'] = 'Compiling LaTeX to PDF (this may take a minute)...'
         
         pdf_output_bytes = None
         
@@ -910,28 +868,21 @@ def process_compile_latex_task(job_id, latex_code):
                 if os.path.exists(tf_path): os.remove(tf_path)
 
         if not pdf_output_bytes:
-            job.error = "PDF compilation failed. Please check your LaTeX syntax or API key."
-            db.session.commit()
+            job['error'] = "PDF compilation failed. Please check your LaTeX syntax or API key."
             return
 
         pdf_output_bytes.seek(0)
 
-        job.current_step = 3
-        job.message = 'Finalizing your document...'
+        job['current_step'] = 3
+        job['message'] = 'Finalizing your document...'
         file_id = str(uuid.uuid4())
-        # Store in global storage for immediate download (session-only)
         pdf_storage[file_id] = {'data': pdf_output_bytes, 'name': 'converted_notes.pdf'}
-        
-        job.file_id = file_id
-        job.current_step = 4
-        job.status = 'finished'
-        job.message = 'Success! Your LaTeX conversion is complete.'
-        db.session.commit()
+        job['file_id'] = file_id
+        job['current_step'] = 4
+        job['status'] = 'finished'
+        job['message'] = 'Success! Your LaTeX conversion is complete.'
     except Exception as e:
-        job = LatexJob.query.get(job_id)
-        if job:
-            job.error = str(e)
-            db.session.commit()
+        job_storage[job_id]['error'] = str(e)
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
