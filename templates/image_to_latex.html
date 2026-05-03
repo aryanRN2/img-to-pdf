@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Image to LaTeX | PDF.PRO{% endblock %}
+{% block title %}Choose AI Engine | PDF.PRO{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -20,29 +20,62 @@
         text-transform: uppercase;
     }
 
-    .tip-card {
-        background: rgba(0, 0, 0, 0.03);
-        border: 1px solid rgba(0, 0, 0, 0.05);
-        border-radius: 1rem;
-        padding: 1.2rem;
-        margin-top: 2rem;
-        font-size: 0.88rem;
-        color: #555;
+    .provider-card {
+        background: rgba(255, 255, 255, 0.4);
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        border-radius: 1.2rem;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
     }
 
-    .tip-card strong {
-        color: #1a1a1a;
-        display: block;
-        margin-bottom: 0.5rem;
+    .provider-card:hover {
+        border-color: #1a1a1a;
+        background: rgba(255, 255, 255, 0.6);
+        transform: translateY(-2px);
     }
 
-    .tip-card ul {
-        margin: 0;
-        padding-left: 1.2rem;
+    .provider-card.active {
+        background: #1a1a1a;
+        color: white;
+        border-color: #1a1a1a;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
     }
 
-    .tip-card li {
-        margin-bottom: 0.3rem;
+    .provider-card.active .text-muted {
+        color: rgba(255, 255, 255, 0.7) !important;
+    }
+
+    .provider-card.active img {
+        filter: brightness(0) invert(1);
+    }
+
+    .provider-card input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+    }
+
+    .engine-title {
+        font-weight: 800;
+        font-size: 1.1rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .engine-desc {
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        background: #28a745;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
     }
 </style>
 {% endblock %}
@@ -53,17 +86,10 @@
         <div class="transparent-card fade-in-up">
             <div class="d-flex align-items-center mb-3 stagger-1">
                 <a href="{{ url_for('home') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius: 50%;">←</a>
-                <h2 class="fw-bold m-0">Image to LaTeX</h2>
+                <h2 class="fw-bold m-0">Choose AI Engine</h2>
             </div>
 
-            <div class="ai-badge stagger-1">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
-                    <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
-                </svg>
-                Powered by Gemini AI
-            </div>
-
-            <p class="text-muted mb-4 stagger-1">Upload a photo of your handwritten notes, blackboard equations, or any study material — Gemini will extract and convert it into a professional LaTeX PDF.</p>
+            <p class="text-muted mb-4 stagger-1">Select the AI "Brain" you want to use for this conversion. Both engines use Aryan's pre-configured keys — no setup required.</p>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -77,39 +103,48 @@
             {% endwith %}
 
             <form action="{{ url_for('image_to_latex') }}" method="POST" id="latexForm" class="stagger-2">
-                    <label for="api_key" class="form-label fw-600">Gemini API Key</label>
-                    <div class="password-wrapper">
-                        <input type="password" id="api_key" name="api_key" class="form-control-premium" placeholder="Paste your key here..." required style="padding-right: 3rem;">
-                        <div style="position:absolute; right:15px; top:50%; transform:translateY(-50%); pointer-events:none;">
-                            🔑
+                
+                <!-- Gemini Card -->
+                <label class="provider-card active w-100" id="card_gemini">
+                    <input type="radio" name="provider" value="gemini" checked onchange="updateCards()">
+                    <div class="d-flex align-items-center">
+                        <img src="https://www.gstatic.com/lamda/images/favicon_v2_180x180.png" alt="Gemini" style="height:40px; margin-right:20px;">
+                        <div>
+                            <div class="engine-title">Gemini 1.5 Flash</div>
+                            <div class="engine-desc text-muted">Optimized for speed and high-volume extractions. Great for clear notes.</div>
                         </div>
                     </div>
-                    <p class="form-text mt-2" style="font-size:0.8rem;">
-                        Need a key? Get it free at <a href="https://aistudio.google.com" target="_blank" style="font-weight:700; color:#1a1a1a;">AI Studio</a>. 
-                        Keys are processed securely and never stored.
-                    </p>
+                </label>
+
+                <!-- NVIDIA Card -->
+                <label class="provider-card w-100" id="card_nvidia">
+                    <input type="radio" name="provider" value="nvidia" onchange="updateCards()">
+                    <div class="d-flex align-items-center">
+                        <img src="https://www.nvidia.com/favicon.ico" alt="NVIDIA" style="height:40px; margin-right:20px;">
+                        <div>
+                            <div class="engine-title">NVIDIA Llama 3.2 (90B)</div>
+                            <div class="engine-desc text-muted">Ultra-precise vision model. Best for complex equations and messy handwriting.</div>
+                        </div>
+                    </div>
+                </label>
+
+                <div class="alert alert-success mt-4 py-3 d-flex align-items-center" style="border-radius:15px; background: rgba(40, 167, 69, 0.05); border: 1px solid rgba(40, 167, 69, 0.2);">
+                    <span class="fs-4 me-3">🛡️</span>
+                    <div class="small">
+                        <strong>Ready to go!</strong> Using Aryan's Shared API Keys.
+                    </div>
                 </div>
 
                 <div class="d-grid mt-4">
                     <button type="submit" class="btn-blue py-3" id="submitBtn">
-                        <span id="btnText">Verify Key & Select Model</span>
+                        <span id="btnText">Verify Engine & Start Extraction</span>
                         <span id="btnSpinner" class="d-none">
                             <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                            Checking Models…
+                            Initializing Engine…
                         </span>
                     </button>
                 </div>
             </form>
-
-            <div class="tip-card stagger-3">
-                <strong>💡 Tips for best results:</strong>
-                <ul>
-                    <li>Use good lighting — avoid shadows over text</li>
-                    <li>Crop to the relevant content area before uploading</li>
-                    <li>Works best with clear, structured handwriting</li>
-                    <li>Supports equations, symbols (∫, ∑, α…), and prose</li>
-                </ul>
-            </div>
         </div>
     </div>
 </div>
@@ -117,14 +152,24 @@
 
 {% block extra_js %}
 <script>
-    const latexForm = document.getElementById('latexForm');
-    const btnText = document.getElementById('btnText');
-    const btnSpinner = document.getElementById('btnSpinner');
+    function updateCards() {
+        const geminiCard = document.getElementById('card_gemini');
+        const nvidiaCard = document.getElementById('card_nvidia');
+        const isNvidia = document.querySelector('input[value="nvidia"]').checked;
 
-    // Show spinner on submit
+        if (isNvidia) {
+            nvidiaCard.classList.add('active');
+            geminiCard.classList.remove('active');
+        } else {
+            geminiCard.classList.add('active');
+            nvidiaCard.classList.remove('active');
+        }
+    }
+
+    const latexForm = document.getElementById('latexForm');
     latexForm.addEventListener('submit', () => {
-        btnText.classList.add('d-none');
-        btnSpinner.classList.remove('d-none');
+        document.getElementById('btnText').classList.add('d-none');
+        document.getElementById('btnSpinner').classList.remove('d-none');
         document.getElementById('submitBtn').disabled = true;
     });
 </script>

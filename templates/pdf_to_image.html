@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+
+{% block title %}PDF to Image | PDF.PRO{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-5 col-md-8">
+        <div class="transparent-card text-start fade-in-up" style="max-width: 500px;">
+            <div class="d-flex align-items-center mb-4 stagger-1">
+                <a href="{{ url_for('home') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius: 50%;">←</a>
+                <h2 class="fw-bold m-0">PDF to Image</h2>
+            </div>
+            <p class="text-muted mb-4 stagger-2">Convert your PDF pages into high-quality JPG images. Perfect for presentations or web use.</p>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show mb-4" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form action="{{ url_for('pdf_to_image') }}" method="POST" enctype="multipart/form-data" class="stagger-3">
+                <div class="mb-4">
+                    <label for="pdf" class="form-label fw-bold">Upload PDF Document</label>
+                    <input class="form-control form-control-premium" type="file" id="pdf" name="pdf" accept=".pdf" required>
+                    <div class="form-text mt-2">Max total size: 50MB. Multi-page PDFs will be downloaded as a ZIP file.</div>
+                </div>
+                <div class="d-grid mt-5">
+                    <button type="submit" class="btn-blue py-3">Convert to Images</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

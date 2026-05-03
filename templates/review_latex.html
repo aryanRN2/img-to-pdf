@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}Review LaTeX Code | PDF.PRO{% endblock %}
+
+{% block extra_css %}
+<!-- Include Ace Editor for LaTeX highlighting -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.12/ace.js" type="text/javascript" charset="utf-8"></script>
+<style>
+    .editor-card {
+        background: white;
+        border-radius: 1.5rem;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        border: 1px solid rgba(0,0,0,0.05);
+        margin-top: 2rem;
+    }
+
+    #editor {
+        width: 100%;
+        height: 500px;
+        border-radius: 1rem;
+        border: 1px solid rgba(0,0,0,0.1);
+        font-size: 14px;
+    }
+
+    .btn-compile {
+        background: #1a1a1a;
+        color: white;
+        padding: 1rem 2.5rem;
+        border-radius: 50px;
+        font-weight: 700;
+        border: none;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 2rem;
+    }
+
+    .btn-compile:hover {
+        background: #333;
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-4">
+    <div class="col-lg-9">
+        <div class="fade-in-up">
+            <div class="d-flex align-items-center mb-4">
+                <h2 class="fw-bold m-0" style="letter-spacing: -1px;">Step 3: Professional LaTeX Review</h2>
+                <span class="badge ms-3" style="background: rgba(124, 181, 157, 0.2); color: #5a8c78; font-weight: 700; border-radius: 50px; padding: 6px 12px;">Code Ready</span>
+            </div>
+            
+            <p class="text-muted">The AI has generated professional LaTeX code from your reviewed text. You can make final adjustments here before compiling the PDF.</p>
+
+            <div class="editor-card">
+                <div id="editor">{{ latex_code }}</div>
+            </div>
+
+            <form action="{{ url_for('review_latex', job_id=job_id) }}" method="POST" id="latexSubmitForm">
+                <input type="hidden" name="latex_code" id="latex_code_hidden">
+                <div class="row g-3 mt-4">
+                    <div class="col-md-4">
+                        <a href="{{ url_for('review_text', job_id=job_id) }}" class="btn btn-outline-secondary w-100 py-3" style="border-radius: 50px; font-weight: 700;">
+                            ← Back to Text
+                        </a>
+                    </div>
+                    <div class="col-md-8">
+                        <button type="submit" class="btn-compile w-100 mt-0">
+                            Compile into Professional PDF
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16" class="ms-2">
+                                <path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    var editor = ace.edit("editor");
+    editor.setTheme("ace/theme/chrome");
+    editor.session.setMode("ace/mode/latex");
+    editor.setOptions({
+        fontSize: "14px",
+        showPrintMargin: false,
+        wrap: true,
+        useSoftTabs: true
+    });
+
+    document.getElementById('latexSubmitForm').addEventListener('submit', function() {
+        document.getElementById('latex_code_hidden').value = editor.getValue();
+    });
+</script>
+{% endblock %}

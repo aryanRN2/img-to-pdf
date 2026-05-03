@@ -85,15 +85,26 @@
             stepsContainer.appendChild(stepDiv);
         });
 
-        if (data.status === 'requires_edit') {
+        if (data.status === 'requires_text_review') {
             statusTitle.innerText = "Text Extracted!";
-            statusMessage.innerText = "Redirecting to editor...";
-            statusIcon.innerHTML = '<div class="display-1 text-info">📝</div>';
+            statusMessage.innerText = "Redirecting to review screen...";
+            statusIcon.innerHTML = '<div class="display-1 text-info">🔍</div>';
             progressBar.style.width = "100%";
             progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
             progressBar.classList.add('bg-info');
-            window.location.href = `/edit-latex/${jobId}`;
-            return false; // Stop polling
+            window.location.href = `/review-text/${jobId}`;
+            return false;
+        }
+
+        if (data.status === 'requires_latex_review') {
+            statusTitle.innerText = "LaTeX Generated!";
+            statusMessage.innerText = "Redirecting to final review...";
+            statusIcon.innerHTML = '<div class="display-1 text-info">🎨</div>';
+            progressBar.style.width = "100%";
+            progressBar.classList.remove('progress-bar-animated', 'progress-bar-striped');
+            progressBar.classList.add('bg-info');
+            window.location.href = `/review-latex/${jobId}`;
+            return false;
         }
 
         if (data.status === 'finished') {

@@ -1,4 +1,10 @@
-from flask import Flask, render_template, request, send_file, flash, redirect, url_for
+from flask import Flask, render_template, request, send_file, flash, redirect, url_for, session
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from .env file
+load_dotenv()
+
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -42,13 +48,24 @@ app.secret_key = "super_secret_key_for_portal"
 # 50 MB limit to prevent DoS attacks
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024 
 
-# Database configuration for Vercel compatibility
-if os.environ.get('DATABASE_URL'):
-    # Vercel Postgres usually provides DATABASE_URL
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace("postgres://", "postgresql://", 1)
+# Database configuration for Vercel/Supabase stability
+db_url = os.environ.get('SUPABASE_DB_URL') or os.environ.get('DATABASE_URL')
+
+if db_url:
+    # Ensure protocol is postgresql:// for SQLAlchemy
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+    # Essential for Vercel/Supabase stability: 
+    # Use SSL and handle connection pooling correctly for serverless
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        "connect_args": {"sslmode": "require"},
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
 else:
-    # Fallback for local development or Vercel ephemeral storage
-    # On Vercel, /tmp/ is the only writable directory
+    # Fallback for local development
     db_path = "/tmp/portal.db" if os.environ.get('VERCEL') else "portal.db"
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
@@ -94,8 +111,12 @@ gemini_lock = threading.Lock()
 last_gemini_time = 0.0
 GEMINI_MIN_INTERVAL = 5.0 # Max 12 requests per minute
 
-# Admin's shared Gemini API key (set via env var)
+# Admin's shared API keys (set via env var)
 ADMIN_GEMINI_KEY = os.environ.get('GEMINI_API_KEY', '')
+ADMIN_NVIDIA_KEY = os.environ.get('NVIDIA_API_KEY', '')
+
+# In-memory storage for images (UUID -> bytes)
+image_storage = {}
 
 @app.route('/')
 def home():
@@ -339,6 +360,84 @@ def process_document_to_pdf_task(job_id, filename, file_bytes):
     except Exception as e:
         job_storage[job_id]['error'] = f"Conversion failed: {str(e)}"
 
+@app.route('/pdf-to-image', methods=['GET', 'POST'])
+def pdf_to_image():
+    if request.method == 'POST':
+        if 'pdf' not in request.files:
+            flash('No file part provided.', 'danger')
+            return redirect(request.url)
+        
+        file = request.files['pdf']
+        if file.filename == '':
+            flash('No selected file.', 'danger')
+            return redirect(request.url)
+        
+        if not allowed_pdf(file.filename):
+            flash('Invalid file format. Please upload a PDF.', 'danger')
+            return redirect(request.url)
+
+        job_id = str(uuid.uuid4())
+        job_storage[job_id] = {
+            'status': 'queued',
+            'current_step': 0,
+            'total_steps': 2,
+            'steps': ['Uploading PDF', 'Converting to Images'],
+            'message': 'Starting conversion...',
+            'error': None,
+            'file_id': None
+        }
+
+        file_bytes = file.read()
+        filename = file.filename
+        thread = threading.Thread(target=process_pdf_to_image_task, args=(job_id, filename, file_bytes))
+        thread.start()
+
+        return redirect(url_for('processing_page', job_id=job_id))
+                
+    return render_template('pdf_to_image.html')
+
+def process_pdf_to_image_task(job_id, filename, file_bytes):
+    try:
+        job = job_storage[job_id]
+        job['current_step'] = 1
+        job['message'] = 'Connecting to ConvertAPI for high-quality image extraction...'
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, secure_filename(filename))
+            with open(input_path, 'wb') as f:
+                f.write(file_bytes)
+            
+            # Convert PDF to JPG. ConvertAPI returns a ZIP if multiple images are generated.
+            result = convertapi.convert('jpg', { 'File': input_path }, from_format = 'pdf')
+            
+            output_bytes = io.BytesIO()
+            output_bytes.write(result.file.url_to_bytes())
+            output_bytes.seek(0)
+            
+            file_id = str(uuid.uuid4())
+            
+            # If the result is a single image, name it .jpg, otherwise it's likely a .zip from ConvertAPI
+            output_filename = filename.rsplit('.', 1)[0] + '.zip'
+            mimetype = 'application/zip'
+            
+            # Check if it's actually a single image or multiple
+            if result.file.filename.lower().endswith('.jpg'):
+                output_filename = filename.rsplit('.', 1)[0] + '.jpg'
+                mimetype = 'image/jpeg'
+
+            pdf_storage[file_id] = {
+                'data': output_bytes,
+                'name': output_filename,
+                'mimetype': mimetype
+            }
+            
+            job['file_id'] = file_id
+            job['current_step'] = 2
+            job['status'] = 'finished'
+            job['message'] = 'Success! Your images are ready.'
+    except Exception as e:
+        job_storage[job_id]['error'] = f"Conversion failed: {str(e)}"
+
 @app.route('/download/<file_id>')
 def download_page(file_id):
     if file_id not in pdf_storage:
@@ -354,7 +453,7 @@ def get_file(file_id):
     file_info = pdf_storage[file_id]
     return send_file(
         file_info['data'],
-        mimetype='application/pdf',
+        mimetype=file_info.get('mimetype', 'application/pdf'),
         as_attachment=True,
         download_name=file_info['name']
     )
@@ -431,7 +530,7 @@ def latex_admin():
     secret = request.args.get('secret', '')
     if secret != 'ARYAN':
         return "Unauthorized", 403
-    action = request.args.get('action', '')
+    action = request.args.get('action', 'list') # Default to 'list'
     username = request.args.get('username', '')
     
     if action == 'approve' and username:
@@ -451,63 +550,23 @@ def latex_admin():
         return f"<h2>Registered Users</h2><table border=1><tr><th>Username</th><th>Name</th><th>Status</th><th>Action</th></tr>{rows}</table>"
     return "No action taken.", 200
 
-@app.route('/image-to-latex', methods=['GET', 'POST'])
+@app.route('/image-to-latex')
 @login_required
 def image_to_latex():
-    from flask import session
     if current_user.status != 'approved':
         flash('You must be an approved BHU user to use this feature.', 'warning')
         return redirect(url_for('latex_waiting', username=current_user.username))
 
-    if request.method == 'POST':
-        user_api_key = request.form.get('api_key', '').strip()
-        final_api_key = user_api_key or ADMIN_GEMINI_KEY
-
-        if not final_api_key:
-            flash('Please provide a Gemini API key to continue.', 'danger')
-            return redirect(request.url)
-
-        try:
-            client = google_genai.Client(api_key=final_api_key)
-            # Order of preference from most basic/generous free tier to most advanced
-            preference_order = [
-                'gemini-1.5-flash-8b', 
-                'gemini-1.5-flash', 
-                'gemini-2.0-flash-exp', 
-                'gemini-1.5-pro', 
-                'gemini-2.0-flash'
-            ]
-            
-            selected_model = None
-            last_error = None
-            
-            for pref in preference_order:
-                try:
-                    # Send a tiny dummy request to verify quota and model existence
-                    client.models.generate_content(
-                        model=pref,
-                        contents="test"
-                    )
-                    selected_model = pref
-                    break
-                except Exception as e:
-                    last_error = str(e)
-                    continue
-            
-            if not selected_model:
-                flash(f'Your API key could not access any models. Last error: {last_error}', 'danger')
-                return redirect(request.url)
-                
-            session['latex_api_key'] = final_api_key
-            session['latex_model'] = selected_model
-            
-            return redirect(url_for('image_to_latex_upload'))
-            
-        except Exception as e:
-            flash(f'API Key Validation Failed: {str(e)}', 'danger')
-            return redirect(request.url)
-            
-    return render_template('image_to_latex.html')
+    # Force the premium RN-Vision-Transformer-200B engine
+    if not ADMIN_NVIDIA_KEY:
+        flash('The Premium Engine is currently offline (Key missing).', 'danger')
+        return redirect(url_for('home'))
+        
+    session['latex_api_key'] = ADMIN_NVIDIA_KEY
+    session['latex_model'] = "meta/llama-3.2-90b-vision-instruct"
+    session['latex_provider'] = 'nvidia'
+    
+    return redirect(url_for('image_to_latex_upload'))
 
 @app.route('/image-to-latex-upload', methods=['GET', 'POST'])
 @login_required
@@ -539,49 +598,63 @@ def image_to_latex_upload():
             return redirect(request.url)
 
         job_id = str(uuid.uuid4())
+        image_id = str(uuid.uuid4())
+        image_data = file.read()
+        image_storage[image_id] = image_data
+
         job_storage[job_id] = {
             'status': 'queued',
             'current_step': 0,
-            'total_steps': 2,
-            'steps': ['AI Vision Analysis', 'Awaiting User Edit'],
+            'total_steps': 4,
+            'steps': ['Extracting Structured Text', 'Awaiting Text Review', 'Converting to LaTeX', 'Awaiting Compilation'],
             'message': f'Initializing {model_name}...',
             'error': None,
             'file_id': None,
+            'extracted_text': None,
             'extracted_latex': None,
+            'image_id': image_id,
             'type': 'image_to_latex'
         }
 
-        thread = threading.Thread(target=process_image_to_latex_task, args=(job_id, file.read(), api_key, model_name))
+        api_key = session['latex_api_key']
+        model_name = session['latex_model']
+        provider = session.get('latex_provider', 'gemini')
+
+        thread = threading.Thread(target=process_image_to_text_task, args=(job_id, image_data, api_key, model_name, provider))
         thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
                 
     return render_template('image_to_latex_upload.html', model_name=model_name)
 
-def process_image_to_latex_task(job_id, image_bytes, api_key, model_name):
+def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='gemini'):
     try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
         from langchain_core.messages import HumanMessage
-        from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.output_parsers import StrOutputParser
         
         job = job_storage[job_id]
         job['current_step'] = 0
-        job['message'] = f'{model_name} is analyzing your image via LangChain...'
+        job['message'] = 'RN-Vision-Transformer-200B is performing deep architectural analysis...'
         
-        # Instantiate LLMs
-        vision_llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=api_key, temperature=0.1)
-        # Use a fast text model for correction, defaulting to standard gemini-1.5-flash
-        correction_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key, temperature=0.1)
+        # Instantiate LLM
+        if provider == 'nvidia':
+            from langchain_nvidia_ai_endpoints import ChatNVIDIA
+            vision_llm = ChatNVIDIA(model=model_name, nvidia_api_key=api_key, temperature=0.1)
+        else:
+            # Using google-genai SDK directly
+            pass
 
-        # Convert image to base64 for LangChain Vision
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
         
         vision_prompt = (
-            "You are an expert LaTeX typesetter. Look at this handwritten image of study notes or equations. "
-            "Convert ALL visible handwriting, text, and mathematical expressions into a complete, compilable LaTeX document. "
-            "Use the 'article' documentclass. Include packages: amsmath, amssymb, geometry (with margins=1in), fontenc (T1), inputenc (utf8). "
-            "Preserve the structure and order of the content as closely as possible. "
-            "Output ONLY the raw LaTeX code, starting with \\documentclass and ending with \\end{document}. No explanations or conversational text."
+            "You are an expert academic scribe. Your task is to extract all content from this handwritten image with absolute fidelity to the logical structure.\n\n"
+            "CRITICAL: Capture all mathematical symbols (summations, limits, integrals, fractions, etc.) using standard LaTeX notation (e.g., use \\sum_{k=0}^{\\infty} for summations).\n\n"
+            "Smartly identify:\n"
+            "1. Theorems and their corresponding Proofs (maintain the logical link).\n"
+            "2. Mathematical derivations, ensuring every step and every symbol is captured perfectly.\n"
+            "3. Definitions and Examples.\n"
+            "4. Page structure (headings, bullet points, numbered lists).\n\n"
+            "Output the result in clearly structured plain text. Use [Theorem], [Proof], [Definition] markers to indicate sections. "
+            "Ensure no content from the page is missed."
         )
 
         vision_message = HumanMessage(
@@ -591,105 +664,139 @@ def process_image_to_latex_task(job_id, image_bytes, api_key, model_name):
             ]
         )
 
-        correction_prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are an expert LaTeX debugger. The following LaTeX code was generated by an AI and may contain syntax errors, unclosed environments, missing brackets, or conversational filler. Fix all errors, remove any markdown formatting like ```latex, and return ONLY the raw, compilable LaTeX code. Do not include any explanations."),
-            ("user", "{raw_latex}")
-        ])
-        
-        correction_chain = correction_prompt | correction_llm | StrOutputParser()
-
-        def is_retryable(exc):
-            error_str = str(exc).lower()
-            return any(keyword in error_str for keyword in [
-                '429', 'resource_exhausted', 'rate limit', 'quota',
-                'service unavailable', '503', '500', 'connection', 'timeout'
-            ])
-
-        @retry(
-            wait=wait_exponential(multiplier=2, min=2, max=60),
-            stop=stop_after_attempt(5),
-            retry=retry_if_exception(is_retryable),
-            reraise=True
-        )
         def call_vision():
-            global last_gemini_time
-            job['message'] = 'Waiting for available AI slot (Vision step)...'
-            with gemini_lock:
-                job['message'] = f'{model_name} is extracting LaTeX from image...'
-                now = time.time()
-                elapsed = now - last_gemini_time
-                if elapsed < GEMINI_MIN_INTERVAL:
-                    time.sleep(GEMINI_MIN_INTERVAL - elapsed)
-                
-                try:
-                    res = vision_llm.invoke([vision_message])
-                    last_gemini_time = time.time()
-                    return res.content
-                except Exception as e:
-                    last_gemini_time = time.time()
-                    raise e
-                    
-        @retry(
-            wait=wait_exponential(multiplier=2, min=2, max=60),
-            stop=stop_after_attempt(5),
-            retry=retry_if_exception(is_retryable),
-            reraise=True
-        )
-        def call_correction(raw_latex_input):
-            global last_gemini_time
-            job['message'] = 'Waiting for available AI slot (Correction step)...'
-            with gemini_lock:
-                job['message'] = 'AI is checking and correcting LaTeX syntax...'
-                now = time.time()
-                elapsed = now - last_gemini_time
-                if elapsed < GEMINI_MIN_INTERVAL:
-                    time.sleep(GEMINI_MIN_INTERVAL - elapsed)
-                
-                try:
-                    res = correction_chain.invoke({"raw_latex": raw_latex_input})
-                    last_gemini_time = time.time()
-                    return res
-                except Exception as e:
-                    last_gemini_time = time.time()
-                    raise e
+            if provider == 'nvidia':
+                res = vision_llm.invoke([vision_message])
+                return res.content
+            else:
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=api_key)
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=[
+                        vision_prompt,
+                        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+                    ]
+                )
+                return response.text
 
-        try:
-            # Step 1: Vision Model Generation
-            raw_latex = call_vision()
-            
-            # Step 2: LangChain Correction & Parsing
-            corrected_latex = call_correction(raw_latex)
-            
-        except Exception as e:
-            job['error'] = f"AI Analysis Failed: {str(e)}"
-            return
-
+        extracted_text = call_vision()
+        job['extracted_text'] = extracted_text
         job['current_step'] = 1
-        job['message'] = 'Cleaning and formatting LaTeX code...'
-        
-        final_latex = corrected_latex
-        final_latex = re.sub(r'^```(?:latex)?\n?', '', final_latex, flags=re.IGNORECASE)
-        final_latex = re.sub(r'```$', '', final_latex.strip())
-        final_latex = final_latex.strip()
-
-        if not final_latex.startswith('\\documentclass'):
-            final_latex = (
-                '\\documentclass{article}\n'
-                '\\usepackage[utf8]{inputenc}\n'
-                '\\usepackage[T1]{fontenc}\n'
-                '\\usepackage{amsmath,amssymb}\n'
-                '\\usepackage[margin=1in]{geometry}\n'
-                '\\begin{document}\n'
-                + final_latex +
-                '\n\\end{document}\n'
-            )
-
-        job['extracted_latex'] = final_latex
-        job['current_step'] = 2
-        job['status'] = 'requires_edit'
-        job['message'] = 'Extraction complete. Redirecting to editor...'
+        job['status'] = 'requires_text_review'
+        job['message'] = 'Extraction complete. Please review the text.'
     except Exception as e:
         job_storage[job_id]['error'] = str(e)
+
+@app.route('/review-text/<job_id>', methods=['GET', 'POST'])
+def review_text(job_id):
+    if job_id not in job_storage: return redirect(url_for('home'))
+    job = job_storage[job_id]
+    
+    if request.method == 'POST':
+        edited_text = request.form.get('text_content', '')
+        job['extracted_text'] = edited_text
+        job['status'] = 'queued'
+        job['current_step'] = 2
+        job['message'] = 'Converting reviewed text to LaTeX...'
+        
+        api_key = session.get('latex_api_key')
+        model_name = session.get('latex_model')
+        provider = session.get('latex_provider', 'gemini')
+        
+        thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, edited_text, api_key, model_name, provider))
+        thread.start()
+        return redirect(url_for('processing_page', job_id=job_id))
+        
+    return render_template('review_text.html', job_id=job_id, text_content=job['extracted_text'], image_id=job.get('image_id'))
+
+def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='gemini'):
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        
+        job = job_storage[job_id]
+        job['current_step'] = 2
+        job['message'] = 'RN-Vision-Transformer-200B is synthesizing LaTeX code...'
+        if provider == 'nvidia':
+            from langchain_nvidia_ai_endpoints import ChatNVIDIA
+            llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
+        else:
+            # Using google-genai SDK directly
+            pass
+
+        def call_llm():
+            if provider == 'nvidia':
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", (
+                        "You are a professional LaTeX typesetter. Convert the provided academic text into a beautiful, compilable LaTeX document.\n\n"
+                        "CRITICAL: Preserve and properly typeset all mathematical symbols (summations, limits, integrals, matrices, etc.) provided in the text. "
+                        "The text already contains LaTeX-style math notation (e.g., \\sum) - use these to create high-quality mathematical environments.\n\n"
+                        "Guidelines:\n"
+                        "1. Use 'article' documentclass with: amsmath, amssymb, amsthm, geometry, fontenc(T1), inputenc(utf8).\n"
+                        "2. Use 'theorem' and 'proof' environments for identified sections.\n"
+                        "3. Use 'align*' or 'equation' environments for multi-step derivations.\n"
+                        "4. Output ONLY raw LaTeX code starting with \\documentclass."
+                    )),
+                    ("user", "{text}")
+                ])
+                chain = prompt | llm | StrOutputParser()
+                return chain.invoke({"text": text_content})
+            else:
+                from google import genai
+                client = genai.Client(api_key=api_key)
+                sys_instruct = (
+                    "You are a professional LaTeX typesetter. Convert the provided academic text into a beautiful, compilable LaTeX document.\n\n"
+                    "CRITICAL: Preserve and properly typeset all mathematical symbols (summations, limits, integrals, matrices, etc.) provided in the text.\n"
+                    "Guidelines:\n"
+                    "1. Use 'article' documentclass with: amsmath, amssymb, amsthm, geometry, fontenc(T1), inputenc(utf8).\n"
+                    "2. Use 'theorem' and 'proof' environments for identified sections.\n"
+                    "3. Use 'align*' or 'equation' environments for multi-step derivations.\n"
+                    "4. Output ONLY raw LaTeX code starting with \\documentclass."
+                )
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    config=types.GenerateContentConfig(system_instruction=sys_instruct),
+                    contents=[text_content]
+                )
+                return response.text
+
+        latex_code = call_llm()
+        
+        # Clean markdown
+        latex_code = re.sub(r'^```(?:latex)?\n?', '', latex_code, flags=re.IGNORECASE)
+        latex_code = re.sub(r'```$', '', latex_code.strip())
+
+        job['extracted_latex'] = latex_code
+        job['current_step'] = 3
+        job['status'] = 'requires_latex_review'
+        job['message'] = 'LaTeX conversion complete. Final review required.'
+    except Exception as e:
+        job_storage[job_id]['error'] = str(e)
+
+@app.route('/review-latex/<job_id>', methods=['GET', 'POST'])
+def review_latex(job_id):
+    if job_id not in job_storage: return redirect(url_for('home'))
+    job = job_storage[job_id]
+    
+    if request.method == 'POST':
+        edited_latex = request.form.get('latex_code', '')
+        job['extracted_latex'] = edited_latex
+        job['status'] = 'queued'
+        job['current_step'] = 3
+        job['message'] = 'Compiling final PDF...'
+        
+        thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
+        thread.start()
+        return redirect(url_for('processing_page', job_id=job_id))
+        
+    return render_template('review_latex.html', job_id=job_id, latex_code=job['extracted_latex'])
+
+@app.route('/view-image/<image_id>')
+def view_image(image_id):
+    if image_id not in image_storage: return "Image not found", 404
+    return send_file(io.BytesIO(image_storage[image_id]), mimetype='image/jpeg')
 
 @app.route('/edit-latex/<job_id>', methods=['GET', 'POST'])
 def edit_latex(job_id):
@@ -719,7 +826,7 @@ def edit_latex(job_id):
 def process_compile_latex_task(job_id, latex_code):
     try:
         job = job_storage[job_id]
-        job['current_step'] = 0
+        job['current_step'] = 3
         job['message'] = 'Compiling LaTeX to PDF (this may take a minute)...'
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -740,12 +847,12 @@ def process_compile_latex_task(job_id, latex_code):
                 pdf_output_bytes = io.BytesIO(f.read())
             pdf_output_bytes.seek(0)
 
-        job['current_step'] = 1
+        job['current_step'] = 3
         job['message'] = 'Finalizing your document...'
         file_id = str(uuid.uuid4())
         pdf_storage[file_id] = {'data': pdf_output_bytes, 'name': 'converted_notes.pdf'}
         job['file_id'] = file_id
-        job['current_step'] = 2
+        job['current_step'] = 4
         job['status'] = 'finished'
         job['message'] = 'Success! Your LaTeX conversion is complete.'
     except Exception as e:

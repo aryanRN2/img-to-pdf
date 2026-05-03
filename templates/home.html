@@ -121,19 +121,20 @@
             Image to PDF
         </a>
         <a href="{{ url_for('merge_pdf') }}" class="btn-portal-glass">Merge PDF</a>
+        <a href="{{ url_for('pdf_to_image') }}" class="btn-portal-glass">PDF to Image</a>
         <a href="{{ url_for('document_to_pdf') }}" class="btn-portal-glass">Document to PDF</a>
         {% if current_user.is_authenticated and current_user.status == 'approved' %}
-            <button class="btn-portal-glass d-inline-flex align-items-center" disabled style="opacity: 0.6; cursor: not-allowed;">
+            <a href="{{ url_for('image_to_latex') }}" class="btn-portal-glass d-inline-flex align-items-center">
                 Image to LaTeX
-                <span class="badge badge-coming-soon ms-2">Updating...</span>
-            </button>
+                <span class="badge ms-2" style="background: #1a1a1a; color: white; font-size: 0.6rem;">AI PRO</span>
+            </a>
             <a href="{{ url_for('latex_logout') }}" class="btn-portal-glass d-inline-flex align-items-center" style="background: rgba(255, 0, 0, 0.05); border-color: rgba(255, 0, 0, 0.2); color: #d9534f;">
                 Logout
             </a>
         {% else %}
-            <button type="button" class="btn-portal-glass d-inline-flex align-items-center" style="opacity: 0.6; cursor: not-allowed;">
+            <button type="button" onclick="showBhuModal()" class="btn-portal-glass d-inline-flex align-items-center">
                 Image to LaTeX
-                <span class="badge badge-coming-soon ms-2">Under Development</span>
+                <span class="badge ms-2" style="background: #5a8c78; color: white; font-size: 0.6rem;">AI POWERED</span>
             </button>
         {% endif %}
     </div>
