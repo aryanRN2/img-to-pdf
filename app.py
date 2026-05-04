@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, send_file, flash, redirect, u
 from dotenv import load_dotenv
 import os
 
-# Load environment variables from .env file
+
 load_dotenv()
 
 from werkzeug.utils import secure_filename
@@ -25,6 +25,8 @@ from google import genai as google_genai
 from google.genai import types as genai_types
 from flask_sqlalchemy import SQLAlchemy
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception, RetryError
+import json
+from datetime import datetime
 
 convertapi.api_secret = os.environ.get('CONVERTAPI_SECRET', 'your_secret_here')
 
@@ -57,6 +59,7 @@ if db_url:
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+    
     # Essential for Vercel/Supabase stability: 
     # Use SSL and handle connection pooling correctly for serverless
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -89,6 +92,46 @@ class LatexUser(UserMixin, db.Model):
     password = db.Column(db.String(256), nullable=False)
     status = db.Column(db.String(20), default='pending') # 'pending' or 'approved'
 
+# Job Model for tracking background tasks across serverless requests
+class JobStatus(db.Model):
+    id = db.Column(db.String(36), primary_key=True)
+    status = db.Column(db.String(50), default='queued')
+    current_step = db.Column(db.Integer, default=0)
+    total_steps = db.Column(db.Integer, default=1)
+    message = db.Column(db.String(500))
+    error = db.Column(db.Text)
+    file_id = db.Column(db.String(36))
+    steps_json = db.Column(db.Text) # JSON list of step names
+    extracted_text = db.Column(db.Text)
+    extracted_latex = db.Column(db.Text)
+    image_id = db.Column(db.String(36))
+    job_type = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "status": self.status,
+            "current_step": self.current_step,
+            "total_steps": self.total_steps,
+            "message": self.message,
+            "error": self.error,
+            "file_id": self.file_id,
+            "steps": json.loads(self.steps_json) if self.steps_json else [],
+            "extracted_text": self.extracted_text,
+            "extracted_latex": self.extracted_latex,
+            "image_id": self.image_id,
+            "type": self.job_type
+        }
+
+# File Model for persistent storage across serverless requests
+class StoredFile(db.Model):
+    id = db.Column(db.String(36), primary_key=True)
+    name = db.Column(db.String(255))
+    data = db.Column(db.LargeBinary)
+    mimetype = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 # Initialize database
 with app.app_context():
     try:
@@ -101,22 +144,47 @@ with app.app_context():
 def health_check():
     return {"status": "healthy"}, 200
 
-# In-memory storage for generated PDFs (UUID -> BytesIO)
-pdf_storage = {}
-# In-memory storage for job statuses
-job_storage = {}
+# Helper functions for Job/File management (DB-backed for Vercel)
+def get_job(job_id):
+    job = JobStatus.query.get(job_id)
+    return job
 
-# Rate limit lock for Gemini
-gemini_lock = threading.Lock()
-last_gemini_time = 0.0
-GEMINI_MIN_INTERVAL = 5.0 # Max 12 requests per minute
+def update_job(job_id, **kwargs):
+    job = JobStatus.query.get(job_id)
+    if job:
+        for key, value in kwargs.items():
+            if key == 'steps':
+                job.steps_json = json.dumps(value)
+            elif hasattr(job, key):
+                setattr(job, key, value)
+        db.session.commit()
+    return job
+
+def create_job(job_id, steps, message, job_type, total_steps=None):
+    new_job = JobStatus(
+        id=job_id,
+        steps_json=json.dumps(steps),
+        message=message,
+        job_type=job_type,
+        total_steps=total_steps or len(steps),
+        status='queued'
+    )
+    db.session.add(new_job)
+    db.session.commit()
+    return new_job
+
+def save_file(file_id, name, data, mimetype='application/pdf'):
+    new_file = StoredFile(id=file_id, name=name, data=data, mimetype=mimetype)
+    db.session.add(new_file)
+    db.session.commit()
+    return new_file
+
+def get_stored_file(file_id):
+    return StoredFile.query.get(file_id)
 
 # Admin's shared API keys (set via env var)
 ADMIN_GEMINI_KEY = os.environ.get('GEMINI_API_KEY', '')
 ADMIN_NVIDIA_KEY = os.environ.get('NVIDIA_API_KEY', '')
-
-# In-memory storage for images (UUID -> bytes)
-image_storage = {}
 
 @app.route('/')
 def home():
@@ -150,15 +218,8 @@ def image_to_pdf():
             return redirect(request.url)
 
         job_id = str(uuid.uuid4())
-        job_storage[job_id] = {
-            'status': 'queued',
-            'current_step': 0,
-            'total_steps': 3,
-            'steps': ['Uploading Images', 'Processing Format', 'Generating PDF'],
-            'message': 'Starting conversion...',
-            'error': None,
-            'file_id': None
-        }
+        steps = ['Uploading Images', 'Processing Format', 'Generating PDF']
+        create_job(job_id, steps, 'Starting conversion...', 'image_to_pdf', total_steps=3)
 
         # Start background thread
         thread = threading.Thread(target=process_image_to_pdf_task, args=(job_id, file_data))
@@ -170,58 +231,53 @@ def image_to_pdf():
 
 def process_image_to_pdf_task(job_id, file_data):
     try:
-        job = job_storage[job_id]
-        job['current_step'] = 1
-        job['message'] = f'Processing {len(file_data)} images...'
-        
-        images_list = []
-        for item in file_data:
-            try:
-                img = Image.open(io.BytesIO(item['bytes']))
-                if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-                    alpha = img.convert('RGBA').split()[-1]
-                    bg = Image.new("RGB", img.size, (255, 255, 255))
-                    bg.paste(img, mask=alpha)
-                    img = bg
-                elif img.mode != 'RGB':
-                    img = img.convert('RGB')
-                images_list.append(img)
-            except Exception as e:
-                job['error'] = f"Error processing {item['name']}: {str(e)}"
-                return
+        with app.app_context():
+            update_job(job_id, current_step=1, message=f'Processing {len(file_data)} images...')
+            
+            images_list = []
+            for item in file_data:
+                try:
+                    img = Image.open(io.BytesIO(item['bytes']))
+                    if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+                        alpha = img.convert('RGBA').split()[-1]
+                        bg = Image.new("RGB", img.size, (255, 255, 255))
+                        bg.paste(img, mask=alpha)
+                        img = bg
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    images_list.append(img)
+                except Exception as e:
+                    update_job(job_id, error=f"Error processing {item['name']}: {str(e)}")
+                    return
 
-        job['current_step'] = 2
-        job['message'] = 'Merging images into PDF document...'
-        
-        pdf_bytes = io.BytesIO()
-        images_list[0].save(pdf_bytes, format='PDF', save_all=True, append_images=images_list[1:])
-        pdf_bytes.seek(0)
-        
-        file_id = str(uuid.uuid4())
-        pdf_storage[file_id] = {
-            'data': pdf_bytes,
-            'name': 'converted_images.pdf'
-        }
-        
-        job['file_id'] = file_id
-        job['current_step'] = 3
-        job['status'] = 'finished'
-        job['message'] = 'Success! Your PDF is ready.'
+            update_job(job_id, current_step=2, message='Merging images into PDF document...')
+            
+            pdf_bytes = io.BytesIO()
+            images_list[0].save(pdf_bytes, format='PDF', save_all=True, append_images=images_list[1:])
+            pdf_bytes_data = pdf_bytes.getvalue()
+            
+            file_id = str(uuid.uuid4())
+            save_file(file_id, 'converted_images.pdf', pdf_bytes_data)
+            
+            update_job(job_id, file_id=file_id, current_step=3, status='finished', message='Success! Your PDF is ready.')
     except Exception as e:
-        job_storage[job_id]['error'] = str(e)
+        with app.app_context():
+            update_job(job_id, error=str(e))
 
 @app.route('/processing/<job_id>')
 def processing_page(job_id):
-    if job_id not in job_storage:
+    job = get_job(job_id)
+    if not job:
         flash('Invalid or expired job session.', 'danger')
         return redirect(url_for('home'))
     return render_template('processing.html', job_id=job_id)
 
 @app.route('/api/job-status/<job_id>')
 def job_status_api(job_id):
-    if job_id not in job_storage:
+    job = get_job(job_id)
+    if not job:
         return {"error": "Job not found"}, 404
-    return job_storage[job_id]
+    return job.to_dict()
 
 @app.route('/merge-pdf', methods=['GET', 'POST'])
 def merge_pdf():
@@ -247,15 +303,8 @@ def merge_pdf():
                 return redirect(request.url)
 
         job_id = str(uuid.uuid4())
-        job_storage[job_id] = {
-            'status': 'queued',
-            'current_step': 0,
-            'total_steps': 2,
-            'steps': ['Uploading Files', 'Merging Documents'],
-            'message': 'Starting merge process...',
-            'error': None,
-            'file_id': None
-        }
+        steps = ['Uploading Files', 'Merging Documents']
+        create_job(job_id, steps, 'Starting merge process...', 'merge_pdf', total_steps=2)
 
         thread = threading.Thread(target=process_merge_pdf_task, args=(job_id, file_data))
         thread.start()
@@ -266,32 +315,26 @@ def merge_pdf():
 
 def process_merge_pdf_task(job_id, file_data):
     try:
-        job = job_storage[job_id]
-        job['current_step'] = 1
-        job['message'] = f'Merging {len(file_data)} PDF files...'
-        
-        merger = PyPDF2.PdfMerger()
-        for item in file_data:
-            pdf_stream = io.BytesIO(item['bytes'])
-            merger.append(pdf_stream)
-        
-        output_bytes = io.BytesIO()
-        merger.write(output_bytes)
-        merger.close()
-        output_bytes.seek(0)
-        
-        file_id = str(uuid.uuid4())
-        pdf_storage[file_id] = {
-            'data': output_bytes,
-            'name': 'merged_documents.pdf'
-        }
-        
-        job['file_id'] = file_id
-        job['current_step'] = 2
-        job['status'] = 'finished'
-        job['message'] = 'Success! Your documents have been merged.'
+        with app.app_context():
+            update_job(job_id, current_step=1, message=f'Merging {len(file_data)} PDF files...')
+            
+            merger = PyPDF2.PdfMerger()
+            for item in file_data:
+                pdf_stream = io.BytesIO(item['bytes'])
+                merger.append(pdf_stream)
+            
+            output_bytes = io.BytesIO()
+            merger.write(output_bytes)
+            merger.close()
+            output_bytes_data = output_bytes.getvalue()
+            
+            file_id = str(uuid.uuid4())
+            save_file(file_id, 'merged_documents.pdf', output_bytes_data)
+            
+            update_job(job_id, file_id=file_id, current_step=2, status='finished', message='Success! Your documents have been merged.')
     except Exception as e:
-        job_storage[job_id]['error'] = f"Merge failed: {str(e)}"
+        with app.app_context():
+            update_job(job_id, error=f"Merge failed: {str(e)}")
 
 @app.route('/document-to-pdf', methods=['GET', 'POST'])
 def document_to_pdf():
@@ -310,15 +353,8 @@ def document_to_pdf():
             return redirect(request.url)
 
         job_id = str(uuid.uuid4())
-        job_storage[job_id] = {
-            'status': 'queued',
-            'current_step': 0,
-            'total_steps': 2,
-            'steps': ['Uploading Document', 'Converting via API'],
-            'message': 'Starting conversion...',
-            'error': None,
-            'file_id': None
-        }
+        steps = ['Uploading Document', 'Converting via API']
+        create_job(job_id, steps, 'Starting conversion...', 'document_to_pdf', total_steps=2)
 
         file_bytes = file.read()
         filename = file.filename
@@ -331,34 +367,26 @@ def document_to_pdf():
 
 def process_document_to_pdf_task(job_id, filename, file_bytes):
     try:
-        job = job_storage[job_id]
-        job['current_step'] = 1
-        job['message'] = 'Connecting to ConvertAPI for professional conversion...'
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, secure_filename(filename))
-            with open(input_path, 'wb') as f:
-                f.write(file_bytes)
+        with app.app_context():
+            update_job(job_id, current_step=1, message='Connecting to ConvertAPI for professional conversion...')
             
-            file_ext = filename.rsplit('.', 1)[1].lower()
-            result = convertapi.convert('pdf', { 'File': input_path }, from_format = file_ext)
-            
-            output_bytes = io.BytesIO()
-            output_bytes.write(result.file.url_to_bytes())
-            output_bytes.seek(0)
-            
-            file_id = str(uuid.uuid4())
-            pdf_storage[file_id] = {
-                'data': output_bytes,
-                'name': filename.rsplit('.', 1)[0] + '.pdf'
-            }
-            
-            job['file_id'] = file_id
-            job['current_step'] = 2
-            job['status'] = 'finished'
-            job['message'] = 'Success! Your document is converted.'
+            with tempfile.TemporaryDirectory() as tmpdir:
+                input_path = os.path.join(tmpdir, secure_filename(filename))
+                with open(input_path, 'wb') as f:
+                    f.write(file_bytes)
+                
+                file_ext = filename.rsplit('.', 1)[1].lower()
+                result = convertapi.convert('pdf', { 'File': input_path }, from_format = file_ext)
+                
+                output_bytes_data = result.file.url_to_bytes()
+                
+                file_id = str(uuid.uuid4())
+                save_file(file_id, filename.rsplit('.', 1)[0] + '.pdf', output_bytes_data)
+                
+                update_job(job_id, file_id=file_id, current_step=2, status='finished', message='Success! Your document is converted.')
     except Exception as e:
-        job_storage[job_id]['error'] = f"Conversion failed: {str(e)}"
+        with app.app_context():
+            update_job(job_id, error=f"Conversion failed: {str(e)}")
 
 @app.route('/pdf-to-image', methods=['GET', 'POST'])
 def pdf_to_image():
@@ -377,15 +405,8 @@ def pdf_to_image():
             return redirect(request.url)
 
         job_id = str(uuid.uuid4())
-        job_storage[job_id] = {
-            'status': 'queued',
-            'current_step': 0,
-            'total_steps': 2,
-            'steps': ['Uploading PDF', 'Converting to Images'],
-            'message': 'Starting conversion...',
-            'error': None,
-            'file_id': None
-        }
+        steps = ['Uploading PDF', 'Converting to Images']
+        create_job(job_id, steps, 'Starting conversion...', 'pdf_to_image', total_steps=2)
 
         file_bytes = file.read()
         filename = file.filename
@@ -398,64 +419,56 @@ def pdf_to_image():
 
 def process_pdf_to_image_task(job_id, filename, file_bytes):
     try:
-        job = job_storage[job_id]
-        job['current_step'] = 1
-        job['message'] = 'Connecting to ConvertAPI for high-quality image extraction...'
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, secure_filename(filename))
-            with open(input_path, 'wb') as f:
-                f.write(file_bytes)
+        with app.app_context():
+            update_job(job_id, current_step=1, message='Connecting to ConvertAPI for high-quality image extraction...')
             
-            # Convert PDF to JPG. ConvertAPI returns a ZIP if multiple images are generated.
-            result = convertapi.convert('jpg', { 'File': input_path }, from_format = 'pdf')
-            
-            output_bytes = io.BytesIO()
-            output_bytes.write(result.file.url_to_bytes())
-            output_bytes.seek(0)
-            
-            file_id = str(uuid.uuid4())
-            
-            # If the result is a single image, name it .jpg, otherwise it's likely a .zip from ConvertAPI
-            output_filename = filename.rsplit('.', 1)[0] + '.zip'
-            mimetype = 'application/zip'
-            
-            # Check if it's actually a single image or multiple
-            if result.file.filename.lower().endswith('.jpg'):
-                output_filename = filename.rsplit('.', 1)[0] + '.jpg'
-                mimetype = 'image/jpeg'
+            with tempfile.TemporaryDirectory() as tmpdir:
+                input_path = os.path.join(tmpdir, secure_filename(filename))
+                with open(input_path, 'wb') as f:
+                    f.write(file_bytes)
+                
+                # Convert PDF to JPG. ConvertAPI returns a ZIP if multiple images are generated.
+                result = convertapi.convert('jpg', { 'File': input_path }, from_format = 'pdf')
+                
+                output_bytes_data = result.file.url_to_bytes()
+                
+                file_id = str(uuid.uuid4())
+                
+                # If the result is a single image, name it .jpg, otherwise it's likely a .zip from ConvertAPI
+                output_filename = filename.rsplit('.', 1)[0] + '.zip'
+                mimetype = 'application/zip'
+                
+                # Check if it's actually a single image or multiple
+                if result.file.filename.lower().endswith('.jpg'):
+                    output_filename = filename.rsplit('.', 1)[0] + '.jpg'
+                    mimetype = 'image/jpeg'
 
-            pdf_storage[file_id] = {
-                'data': output_bytes,
-                'name': output_filename,
-                'mimetype': mimetype
-            }
-            
-            job['file_id'] = file_id
-            job['current_step'] = 2
-            job['status'] = 'finished'
-            job['message'] = 'Success! Your images are ready.'
+                save_file(file_id, output_filename, output_bytes_data, mimetype=mimetype)
+                
+                update_job(job_id, file_id=file_id, current_step=2, status='finished', message='Success! Your images are ready.')
     except Exception as e:
-        job_storage[job_id]['error'] = f"Conversion failed: {str(e)}"
+        with app.app_context():
+            update_job(job_id, error=f"Conversion failed: {str(e)}")
 
 @app.route('/download/<file_id>')
 def download_page(file_id):
-    if file_id not in pdf_storage:
+    file_info = get_stored_file(file_id)
+    if not file_info:
         flash('File not found or has expired.', 'warning')
         return redirect(url_for('home'))
     return render_template('download.html', file_id=file_id)
 
 @app.route('/get-file/<file_id>')
 def get_file(file_id):
-    if file_id not in pdf_storage:
+    file_info = get_stored_file(file_id)
+    if not file_info:
         return "File not found", 404
     
-    file_info = pdf_storage[file_id]
     return send_file(
-        file_info['data'],
-        mimetype=file_info.get('mimetype', 'application/pdf'),
+        io.BytesIO(file_info.data),
+        mimetype=file_info.mimetype or 'application/pdf',
         as_attachment=True,
-        download_name=file_info['name']
+        download_name=file_info.name
     )
 
 @app.route('/latex-register', methods=['GET', 'POST'])
@@ -571,7 +584,6 @@ def image_to_latex():
 @app.route('/image-to-latex-upload', methods=['GET', 'POST'])
 @login_required
 def image_to_latex_upload():
-    from flask import session
     if current_user.status != 'approved':
         flash('You must be an approved BHU user to use this feature.', 'warning')
         return redirect(url_for('latex_waiting', username=current_user.username))
@@ -600,21 +612,12 @@ def image_to_latex_upload():
         job_id = str(uuid.uuid4())
         image_id = str(uuid.uuid4())
         image_data = file.read()
-        image_storage[image_id] = image_data
+        
+        save_file(image_id, file.filename, image_data, mimetype=file.mimetype)
 
-        job_storage[job_id] = {
-            'status': 'queued',
-            'current_step': 0,
-            'total_steps': 4,
-            'steps': ['Extracting Structured Text', 'Awaiting Text Review', 'Converting to LaTeX', 'Awaiting Compilation'],
-            'message': f'Initializing {model_name}...',
-            'error': None,
-            'file_id': None,
-            'extracted_text': None,
-            'extracted_latex': None,
-            'image_id': image_id,
-            'type': 'image_to_latex'
-        }
+        steps = ['Extracting Structured Text', 'Awaiting Text Review', 'Converting to LaTeX', 'Awaiting Compilation']
+        create_job(job_id, steps, f'Initializing {model_name}...', 'image_to_latex', total_steps=4)
+        update_job(job_id, image_id=image_id)
 
         api_key = session['latex_api_key']
         model_name = session['latex_model']
@@ -629,11 +632,9 @@ def image_to_latex_upload():
 def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='gemini'):
     try:
         from langchain_core.messages import HumanMessage
-        from langchain_core.output_parsers import StrOutputParser
         
-        job = job_storage[job_id]
-        job['current_step'] = 0
-        job['message'] = 'RN-Vision-Transformer-200B is performing deep architectural analysis...'
+        with app.app_context():
+            update_job(job_id, current_step=0, message='RN-Vision-Transformer-200B is performing deep architectural analysis...')
         
         # Instantiate LLM
         if provider == 'nvidia':
@@ -682,24 +683,20 @@ def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provide
                 return response.text
 
         extracted_text = call_vision()
-        job['extracted_text'] = extracted_text
-        job['current_step'] = 1
-        job['status'] = 'requires_text_review'
-        job['message'] = 'Extraction complete. Please review the text.'
+        with app.app_context():
+            update_job(job_id, extracted_text=extracted_text, current_step=1, status='requires_text_review', message='Extraction complete. Please review the text.')
     except Exception as e:
-        job_storage[job_id]['error'] = str(e)
+        with app.app_context():
+            update_job(job_id, error=str(e))
 
 @app.route('/review-text/<job_id>', methods=['GET', 'POST'])
 def review_text(job_id):
-    if job_id not in job_storage: return redirect(url_for('home'))
-    job = job_storage[job_id]
+    job = get_job(job_id)
+    if not job: return redirect(url_for('home'))
     
     if request.method == 'POST':
         edited_text = request.form.get('text_content', '')
-        job['extracted_text'] = edited_text
-        job['status'] = 'queued'
-        job['current_step'] = 2
-        job['message'] = 'Converting reviewed text to LaTeX...'
+        update_job(job_id, extracted_text=edited_text, status='queued', current_step=2, message='Converting reviewed text to LaTeX...')
         
         api_key = session.get('latex_api_key')
         model_name = session.get('latex_model')
@@ -709,16 +706,16 @@ def review_text(job_id):
         thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
         
-    return render_template('review_text.html', job_id=job_id, text_content=job['extracted_text'], image_id=job.get('image_id'))
+    return render_template('review_text.html', job_id=job_id, text_content=job.extracted_text, image_id=job.image_id)
 
 def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='gemini'):
     try:
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.output_parsers import StrOutputParser
         
-        job = job_storage[job_id]
-        job['current_step'] = 2
-        job['message'] = 'RN-Vision-Transformer-200B is synthesizing LaTeX code...'
+        with app.app_context():
+            update_job(job_id, current_step=2, message='RN-Vision-Transformer-200B is synthesizing LaTeX code...')
+        
         if provider == 'nvidia':
             from langchain_nvidia_ai_endpoints import ChatNVIDIA
             llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
@@ -745,6 +742,7 @@ def process_text_to_latex_task(job_id, text_content, api_key, model_name, provid
                 return chain.invoke({"text": text_content})
             else:
                 from google import genai
+                from google.genai import types
                 client = genai.Client(api_key=api_key)
                 sys_instruct = (
                     "You are a professional LaTeX typesetter. Convert the provided academic text into a beautiful, compilable LaTeX document.\n\n"
@@ -768,121 +766,111 @@ def process_text_to_latex_task(job_id, text_content, api_key, model_name, provid
         latex_code = re.sub(r'^```(?:latex)?\n?', '', latex_code, flags=re.IGNORECASE)
         latex_code = re.sub(r'```$', '', latex_code.strip())
 
-        job['extracted_latex'] = latex_code
-        job['current_step'] = 3
-        job['status'] = 'requires_latex_review'
-        job['message'] = 'LaTeX conversion complete. Final review required.'
+        with app.app_context():
+            update_job(job_id, extracted_latex=latex_code, current_step=3, status='requires_latex_review', message='LaTeX conversion complete. Final review required.')
     except Exception as e:
-        job_storage[job_id]['error'] = str(e)
+        with app.app_context():
+            update_job(job_id, error=str(e))
 
 @app.route('/review-latex/<job_id>', methods=['GET', 'POST'])
 def review_latex(job_id):
-    if job_id not in job_storage: return redirect(url_for('home'))
-    job = job_storage[job_id]
+    job = get_job(job_id)
+    if not job: return redirect(url_for('home'))
     
     if request.method == 'POST':
         edited_latex = request.form.get('latex_code', '')
-        job['extracted_latex'] = edited_latex
-        job['status'] = 'queued'
-        job['current_step'] = 3
-        job['message'] = 'Compiling final PDF...'
+        update_job(job_id, extracted_latex=edited_latex, status='queued', current_step=3, message='Compiling final PDF...')
         
         thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
         thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
         
-    return render_template('review_latex.html', job_id=job_id, latex_code=job['extracted_latex'])
+    return render_template('review_latex.html', job_id=job_id, latex_code=job.extracted_latex)
 
 @app.route('/view-image/<image_id>')
 def view_image(image_id):
-    if image_id not in image_storage: return "Image not found", 404
-    return send_file(io.BytesIO(image_storage[image_id]), mimetype='image/jpeg')
+    file_info = get_stored_file(image_id)
+    if not file_info: return "Image not found", 404
+    return send_file(io.BytesIO(file_info.data), mimetype=file_info.mimetype or 'image/jpeg')
 
 @app.route('/edit-latex/<job_id>', methods=['GET', 'POST'])
 def edit_latex(job_id):
-    if job_id not in job_storage:
+    job = get_job(job_id)
+    if not job:
         flash('Invalid or expired job session.', 'danger')
         return redirect(url_for('home'))
         
-    job = job_storage[job_id]
-    
     if request.method == 'POST':
         edited_latex = request.form.get('latex_code', '')
         
-        job['extracted_latex'] = edited_latex
-        job['status'] = 'queued'
-        job['current_step'] = 0
-        job['total_steps'] = 2
-        job['steps'] = ['Compiling PDF', 'Finalizing Results']
-        job['message'] = 'Compiling LaTeX to PDF...'
+        update_job(job_id, extracted_latex=edited_latex, status='queued', current_step=0, total_steps=2, 
+                   steps=['Compiling PDF', 'Finalizing Results'], message='Compiling LaTeX to PDF...')
         
         thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
         thread.start()
         
         return redirect(url_for('processing_page', job_id=job_id))
         
-    return render_template('edit_latex.html', job_id=job_id, latex_code=job.get('extracted_latex', ''))
+    return render_template('edit_latex.html', job_id=job_id, latex_code=job.extracted_latex or '')
 
 def process_compile_latex_task(job_id, latex_code):
     try:
-        job = job_storage[job_id]
-        job['current_step'] = 3
-        job['message'] = 'Compiling LaTeX to PDF (this may take a minute)...'
-        
-        pdf_output_bytes = None
-        
-        # Strategy 1: Try local pdflatex (Local Dev)
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tex_path = os.path.join(tmpdir, 'output.tex')
-                pdf_path = os.path.join(tmpdir, 'output.pdf')
-                with open(tex_path, 'w', encoding='utf-8') as f:
-                    f.write(latex_code)
-                subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', tmpdir, tex_path],
-                             capture_output=True, text=True, timeout=60)
-                if os.path.exists(pdf_path):
-                    with open(pdf_path, 'rb') as f:
-                        pdf_output_bytes = io.BytesIO(f.read())
-        except Exception:
-            pass # Fallback to Strategy 2
+        with app.app_context():
+            update_job(job_id, current_step=3, message='Compiling LaTeX to PDF (this may take a minute)...')
+            
+            # Clean common LaTeX errors from AI output
+            latex_code = re.sub(r'\\end{derivation}', '', latex_code)
+            latex_code = re.sub(r'\\end$', r'\\end{document}', latex_code.strip())
+            if r'\begin{document}' in latex_code and r'\end{document}' not in latex_code:
+                latex_code += r'\n\end{document}'
 
-        # Strategy 2: ConvertAPI (Cloud / Vercel)
-        if not pdf_output_bytes:
-            import convertapi
-            secret = os.environ.get('CONVERTAPI_SECRET')
-            if not secret or secret == 'your_convertapi_secret_here':
-                job['error'] = "Cloud PDF compilation requires a valid CONVERTAPI_SECRET in Vercel settings."
-                return
+            pdf_output_bytes = None
             
-            convertapi.api_secret = secret
-            job['message'] = 'Local compiler missing. Using Cloud Compiler (ConvertAPI)...'
-            
-            with tempfile.NamedTemporaryFile(suffix='.tex', mode='w', delete=False) as tf:
-                tf.write(latex_code)
-                tf_path = tf.name
-            
+            # Strategy 1: Try local pdflatex (Local Dev)
             try:
-                result = convertapi.convert('pdf', {'File': tf_path}, from_format='tex')
-                pdf_output_bytes = io.BytesIO(result.file.url_to_bytes())
-            finally:
-                if os.path.exists(tf_path): os.remove(tf_path)
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tex_path = os.path.join(tmpdir, 'output.tex')
+                    pdf_path = os.path.join(tmpdir, 'output.pdf')
+                    with open(tex_path, 'w', encoding='utf-8') as f:
+                        f.write(latex_code)
+                    subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', tmpdir, tex_path],
+                                 capture_output=True, text=True, timeout=60)
+                    if os.path.exists(pdf_path):
+                        with open(pdf_path, 'rb') as f:
+                            pdf_output_bytes = f.read()
+            except Exception:
+                pass 
 
-        if not pdf_output_bytes:
-            job['error'] = "PDF compilation failed. Please check your LaTeX syntax or API key."
-            return
+            # Strategy 2: ConvertAPI (Cloud / Vercel)
+            if not pdf_output_bytes:
+                secret = os.environ.get('CONVERTAPI_SECRET')
+                if not secret or secret == 'your_convertapi_secret_here':
+                    update_job(job_id, error="Cloud PDF compilation requires a valid CONVERTAPI_SECRET in Vercel settings.")
+                    return
+                
+                convertapi.api_secret = secret
+                update_job(job_id, message='Local compiler missing. Using Cloud Compiler (ConvertAPI)...')
+                
+                with tempfile.NamedTemporaryFile(suffix='.tex', mode='w', delete=False) as tf:
+                    tf.write(latex_code)
+                    tf_path = tf.name
+                
+                try:
+                    result = convertapi.convert('pdf', {'File': tf_path}, from_format='tex')
+                    pdf_output_bytes = result.file.url_to_bytes()
+                finally:
+                    if os.path.exists(tf_path): os.remove(tf_path)
 
-        pdf_output_bytes.seek(0)
+            if not pdf_output_bytes:
+                update_job(job_id, error="PDF compilation failed. Please check your LaTeX syntax or API key.")
+                return
 
-        job['current_step'] = 3
-        job['message'] = 'Finalizing your document...'
-        file_id = str(uuid.uuid4())
-        pdf_storage[file_id] = {'data': pdf_output_bytes, 'name': 'converted_notes.pdf'}
-        job['file_id'] = file_id
-        job['current_step'] = 4
-        job['status'] = 'finished'
-        job['message'] = 'Success! Your LaTeX conversion is complete.'
+            file_id = str(uuid.uuid4())
+            save_file(file_id, 'converted_notes.pdf', pdf_output_bytes)
+            update_job(job_id, file_id=file_id, current_step=4, status='finished', message='Success! Your LaTeX conversion is complete.')
     except Exception as e:
-        job_storage[job_id]['error'] = str(e)
+        with app.app_context():
+            update_job(job_id, error=str(e))
 
 @app.errorhandler(413)
 def request_entity_too_large(error):
