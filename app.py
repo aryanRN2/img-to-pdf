@@ -613,8 +613,6 @@ def image_to_latex_upload():
         image_id = str(uuid.uuid4())
         image_data = file.read()
         
-        save_file(image_id, file.filename, image_data, mimetype=file.mimetype)
-
         steps = ['Extracting Structured Text', 'Awaiting Text Review', 'Converting to LaTeX', 'Awaiting Compilation']
         create_job(job_id, steps, f'Initializing {model_name}...', 'image_to_latex', total_steps=4)
         update_job(job_id, image_id=image_id)
@@ -623,17 +621,22 @@ def image_to_latex_upload():
         model_name = session['latex_model']
         provider = session.get('latex_provider', 'gemini')
 
-        thread = threading.Thread(target=process_image_to_text_task, args=(job_id, image_data, api_key, model_name, provider))
+        # Pass filename and mimetype to thread so it can save the file
+        thread = threading.Thread(target=process_image_to_text_task, args=(job_id, image_data, api_key, model_name, provider, image_id, file.filename, file.mimetype))
         thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
                 
     return render_template('image_to_latex_upload.html', model_name=model_name)
 
-def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='gemini'):
+def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='gemini', image_id=None, filename=None, mimetype=None):
     try:
         from langchain_core.messages import HumanMessage
         
         with app.app_context():
+            # Save file in background to avoid Vercel timeout
+            if image_id and filename and image_bytes:
+                save_file(image_id, filename, image_bytes, mimetype=mimetype)
+            
             update_job(job_id, current_step=0, message='RN-Vision-Transformer-200B is performing deep architectural analysis...')
         
         # Instantiate LLM

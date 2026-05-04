@@ -10,7 +10,7 @@
                 <a href="{{ url_for('home') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius: 50%;">←</a>
                 <h2 class="fw-bold m-0">Document to PDF</h2>
             </div>
-            <p class="text-muted mb-4 stagger-2">Convert Word, Excel, and PowerPoint files to PDF while maintaining perfect formatting.</p>
+            <p class="text-muted mb-4 stagger-2">Convert Word, RTF, and other formats to high-quality PDF files.</p>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -25,9 +25,9 @@
 
             <form action="{{ url_for('document_to_pdf') }}" method="POST" enctype="multipart/form-data" class="stagger-3">
                 <div class="mb-4">
-                    <label for="document" class="form-label fw-bold">Upload Document (DOCX, XLSX, PPTX)</label>
-                    <input class="form-control form-control-premium" type="file" id="document" name="document" accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx" required>
-                    <div class="form-text mt-2">Max total size: 50MB. Processed via ConvertAPI and deleted instantly.</div>
+                    <label for="document" class="form-label fw-bold">Upload Document (Word, PDF, RTF, etc.)</label>
+                    <input class="form-control form-control-premium" type="file" id="document" name="document" required onchange="checkFileSize(this)">
+                    <div class="form-text mt-2 text-danger" id="size-warning">Max total size: 4MB (Vercel limit).</div>
                 </div>
                 <div class="d-grid mt-5">
                     <button type="submit" class="btn-blue py-3">Convert to PDF</button>
@@ -36,4 +36,32 @@
         </div>
     </div>
 </div>
+
+{% block extra_js %}
+<script>
+    function checkFileSize(input) {
+        const files = input.files;
+        let totalSize = 0;
+        for (let i = 0; i < files.length; i++) {
+            totalSize += files[i].size;
+        }
+        
+        const limit = 4 * 1024 * 1024; // 4MB
+        const warning = document.getElementById('size-warning');
+        const submitBtn = document.querySelector('button[type="submit"]');
+        
+        if (totalSize > limit) {
+            warning.innerText = `⚠️ Total size (${(totalSize / (1024 * 1024)).toFixed(2)}MB) exceeds Vercel's 4.5MB limit. Please select a smaller file.`;
+            warning.className = "form-text mt-2 text-danger fw-bold";
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = "0.5";
+        } else {
+            warning.innerText = "Max total size: 4MB (Vercel limit).";
+            warning.className = "form-text mt-2 text-muted";
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = "1";
+        }
+    }
+</script>
+{% endblock %}
 {% endblock %}

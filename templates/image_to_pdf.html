@@ -26,8 +26,8 @@
             <form action="{{ url_for('image_to_pdf') }}" method="POST" enctype="multipart/form-data" class="stagger-3">
                 <div class="mb-4">
                     <label for="images" class="form-label fw-bold">Upload Images (JPG, PNG, WEBP)</label>
-                    <input class="form-control form-control-premium" type="file" id="images" name="images" accept=".jpg, .jpeg, .png, .webp" multiple required>
-                    <div class="form-text mt-2">Max total size: 50MB. Processed entirely in RAM.</div>
+                    <input class="form-control form-control-premium" type="file" id="images" name="images" accept=".jpg, .jpeg, .png, .webp" multiple required onchange="checkFileSize(this)">
+                    <div class="form-text mt-2 text-danger" id="size-warning">Max total size: 4MB (Vercel limit).</div>
                 </div>
                 <div class="d-grid mt-5">
                     <button type="submit" class="btn-blue py-3">Generate PDF</button>
@@ -35,5 +35,31 @@
             </form>
         </div>
     </div>
-</div>
+{% block extra_js %}
+<script>
+    function checkFileSize(input) {
+        const files = input.files;
+        let totalSize = 0;
+        for (let i = 0; i < files.length; i++) {
+            totalSize += files[i].size;
+        }
+        
+        const limit = 4 * 1024 * 1024; // 4MB
+        const warning = document.getElementById('size-warning');
+        const submitBtn = document.querySelector('button[type="submit"]');
+        
+        if (totalSize > limit) {
+            warning.innerText = `⚠️ Total size (${(totalSize / (1024 * 1024)).toFixed(2)}MB) exceeds Vercel's 4.5MB limit. Please select fewer/smaller files.`;
+            warning.className = "form-text mt-2 text-danger fw-bold";
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = "0.5";
+        } else {
+            warning.innerText = "Max total size: 4MB (Vercel limit).";
+            warning.className = "form-text mt-2 text-muted";
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = "1";
+        }
+    }
+</script>
+{% endblock %}
 {% endblock %}

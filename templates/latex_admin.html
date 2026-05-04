@@ -1,0 +1,299 @@
+{% extends "layout.html" %}
+
+{% block title %}Admin Dashboard | BHU LaTeX Portal{% endblock %}
+
+{% block extra_css %}
+<style>
+    .admin-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+    }
+    .stat-card {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 1.5rem;
+        padding: 2rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+        transition: transform 0.3s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-label {
+        font-size: 0.9rem;
+        color: #666;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #1a1a1a;
+        margin: 0.5rem 0;
+    }
+    .user-table-card {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        border-radius: 2rem;
+        padding: 2rem;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+    .table-responsive {
+        border-radius: 1.5rem;
+    }
+    .table {
+        margin-bottom: 0;
+    }
+    .table thead th {
+        background: rgba(0, 0, 0, 0.03);
+        border-bottom: none;
+        padding: 1.2rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 0.5px;
+    }
+    .table tbody td {
+        padding: 1.2rem;
+        vertical-align: middle;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    .status-badge {
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+    .status-pending {
+        background: #fff3e0;
+        color: #ef6c00;
+    }
+    .status-approved {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+    .approve-btn {
+        background: #1a1a1a;
+        color: white;
+        border: none;
+        padding: 0.5rem 1.2rem;
+        border-radius: 50px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+    .approve-btn:hover {
+        background: #4285F4;
+        box-shadow: 0 5px 15px rgba(66, 133, 244, 0.3);
+        transform: scale(1.05);
+    }
+    .approve-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+    .dashboard-header {
+        margin-bottom: 2.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .dashboard-title {
+        font-weight: 800;
+        font-size: 2.2rem;
+        letter-spacing: -1px;
+    }
+    .search-box {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.1);
+        border-radius: 50px;
+        padding: 0.8rem 1.5rem;
+        width: 300px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.03);
+    }
+    .toast-container {
+        position: fixed;
+        top: 2rem;
+        right: 2rem;
+        z-index: 9999;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-container fade-in-up">
+    <div class="dashboard-header">
+        <div>
+            <h1 class="dashboard-title">Admin Dashboard</h1>
+            <p class="text-muted">Manage BHU LaTeX Portal users and permissions.</p>
+        </div>
+        <div class="d-flex gap-3 align-items-center">
+            <input type="text" id="userSearch" class="search-box d-none d-md-block" placeholder="Search users...">
+            <a href="{{ url_for('home') }}" class="btn-portal-glass" style="text-decoration: none; padding: 0.8rem 1.5rem; font-size: 0.9rem;">Back to Portal</a>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card stagger-1">
+            <div class="stat-label">Total Users</div>
+            <div class="stat-value" id="totalUsers">{{ users|length }}</div>
+            <div class="progress" style="height: 4px;">
+                <div class="progress-bar bg-dark" style="width: 100%"></div>
+            </div>
+        </div>
+        <div class="stat-card stagger-2">
+            <div class="stat-label">Pending Approval</div>
+            <div class="stat-value" id="pendingUsers">{{ users|selectattr('status', 'equalto', 'pending')|list|length }}</div>
+            <div class="progress" style="height: 4px;">
+                <div class="progress-bar bg-warning" style="width: {{ (users|selectattr('status', 'equalto', 'pending')|list|length / users|length * 100)|round if users|length > 0 else 0 }}%"></div>
+            </div>
+        </div>
+        <div class="stat-card stagger-3">
+            <div class="stat-label">Approved Users</div>
+            <div class="stat-value" id="approvedUsers">{{ users|selectattr('status', 'equalto', 'approved')|list|length }}</div>
+            <div class="progress" style="height: 4px;">
+                <div class="progress-bar bg-success" style="width: {{ (users|selectattr('status', 'equalto', 'approved')|list|length / users|length * 100)|round if users|length > 0 else 0 }}%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="user-table-card fade-in-up stagger-4">
+        <div class="table-responsive">
+            <table class="table" id="usersTable">
+                <thead>
+                    <tr>
+                        <th>User Details</th>
+                        <th>Username</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr id="user-row-{{ user.username }}">
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-circle me-3" style="width: 40px; height: 40px; background: #f0f0f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #666;">
+                                    {{ user.name[0]|upper }}
+                                </div>
+                                <div>
+                                    <div class="fw-bold">{{ user.name }}</div>
+                                    <div class="small text-muted">Joined recently</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <code>@{{ user.username }}</code>
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ user.status }}" id="status-badge-{{ user.username }}">
+                                {{ user.status }}
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            {% if user.status == 'pending' %}
+                            <button class="approve-btn" onclick="approveUser('{{ user.username }}')" id="approve-btn-{{ user.username }}">
+                                Approve Access
+                            </button>
+                            {% else %}
+                            <button class="approve-btn bg-success" disabled>
+                                Approved ✅
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function approveUser(username) {
+        const btn = document.getElementById(`approve-btn-${username}`);
+        const badge = document.getElementById(`status-badge-${username}`);
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        fetch(`/latex-admin?secret=ARYAN&action=approve&username=${username}`)
+            .then(response => {
+                if (response.ok) {
+                    btn.className = "approve-btn bg-success";
+                    btn.innerHTML = "Approved ✅";
+                    badge.className = "status-badge status-approved";
+                    badge.innerHTML = "approved";
+                    
+                    showToast(`User @${username} has been approved!`);
+                    updateStats();
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = "Retry";
+                    showToast("Error approving user.", "danger");
+                }
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = "Retry";
+                showToast("Network error.", "danger");
+            });
+    }
+
+    function showToast(message, type = "success") {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type} shadow-lg border-0 fade show`;
+        toast.style.borderRadius = "1rem";
+        toast.style.minWidth = "300px";
+        toast.innerHTML = `
+            <div class="d-flex align-items-center">
+                <div class="me-3">${type === 'success' ? '✅' : '❌'}</div>
+                <div>${message}</div>
+            </div>
+        `;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
+    }
+
+    function updateStats() {
+        const pending = document.querySelectorAll('.status-badge.status-pending').length;
+        const approved = document.querySelectorAll('.status-badge.status-approved').length;
+        
+        document.getElementById('pendingUsers').innerText = pending;
+        document.getElementById('approvedUsers').innerText = approved;
+    }
+
+    document.getElementById('userSearch').addEventListener('input', function(e) {
+        const term = e.target.value.toLowerCase();
+        const rows = document.querySelectorAll('#usersTable tbody tr');
+        
+        rows.forEach(row => {
+            const text = row.innerText.toLowerCase();
+            row.style.display = text.includes(term) ? '' : 'none';
+        });
+    });
+</script>
+{% endblock %}

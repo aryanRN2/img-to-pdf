@@ -162,7 +162,7 @@
                         </svg>
                     </div>
                     <h4>Drop your image here</h4>
-                    <p>or click to browse &nbsp;·&nbsp; JPG, PNG, WEBP &nbsp;·&nbsp; Max 50MB</p>
+                    <p id="size-warning">or click to browse &nbsp;·&nbsp; JPG, PNG, WEBP &nbsp;·&nbsp; Max 4MB (Vercel Limit)</p>
                 </div>
 
                 <div class="preview-box" id="previewBox">
@@ -209,6 +209,20 @@
     imageInput.addEventListener('change', () => {
         const file = imageInput.files[0];
         if (file) {
+            const limit = 4 * 1024 * 1024; // 4MB
+            const sizeWarning = document.getElementById('size-warning');
+            const submitBtn = document.getElementById('submitBtn');
+
+            if (file.size > limit) {
+                sizeWarning.innerHTML = `<span class="text-danger fw-bold">⚠️ File too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Max 4.5MB allowed on Vercel.</span>`;
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = "0.5";
+            } else {
+                sizeWarning.innerHTML = "or click to browse &nbsp;·&nbsp; JPG, PNG, WEBP &nbsp;·&nbsp; Max 4MB (Vercel Limit)";
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = "1";
+            }
+
             const url = URL.createObjectURL(file);
             previewImg.src = url;
             previewLabel.textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
