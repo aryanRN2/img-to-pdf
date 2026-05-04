@@ -821,11 +821,17 @@ def process_compile_latex_task(job_id, latex_code):
         with app.app_context():
             update_job(job_id, current_step=3, message='Compiling LaTeX to PDF (this may take a minute)...')
             
+            # Safety check: ensure latex_code is a string
+            if latex_code is None:
+                latex_code = ""
+            
             # Clean common LaTeX errors from AI output
             latex_code = re.sub(r'\\end{derivation}', '', latex_code)
             latex_code = re.sub(r'\\end$', r'\\end{document}', latex_code.strip())
+            
+            # Robust end-of-document check
             if r'\begin{document}' in latex_code and r'\end{document}' not in latex_code:
-                latex_code += r'\n\end{document}'
+                latex_code = latex_code + "\n\\end{document}"
 
             pdf_output_bytes = None
             
