@@ -1008,10 +1008,16 @@ def process_compile_latex_task(job_id, latex_code):
                     update_job(job_id, error="Cloud PDF compilation requires a valid CONVERTAPI_SECRET in Vercel settings.")
                     return
                 
+                # Force refresh credentials for this thread to prevent NoneType concatenation error
+                import convertapi
                 convertapi.api_secret = secret
-                update_job(job_id, message='Local compiler missing. Using Cloud Compiler (ConvertAPI)...')
-                
-                with tempfile.NamedTemporaryFile(suffix='.tex', mode='w', delete=False) as tf:
+                # Initialize internal session immediately to lock in the secret
+                try:
+                    convertapi.api_credentials = {'secret': secret}
+                except:
+                    pass
+                    
+                with tempfile.NamedTemporaryFile(suffix='.tex', mode='w', delete=False, encoding='utf-8') as tf:
                     tf.write(latex_code)
                     tf_path = tf.name
                 
