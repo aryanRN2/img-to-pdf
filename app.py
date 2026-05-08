@@ -472,15 +472,16 @@ def text_to_pdf():
         job_id = str(uuid.uuid4())
         
         if use_latex:
-            steps = ['Synthesizing LaTeX', 'Awaiting LaTeX Review', 'Compiling Final PDF']
-            create_job(job_id, steps, 'Initializing AI typesetter...', 'text_to_pdf_latex', total_steps=3)
+            steps = ['Synthesizing LaTeX', 'Compiling Final PDF']
+            create_job(job_id, steps, 'Initializing AI typesetter...', 'text_to_pdf_latex_direct', total_steps=2)
             
             # Use ADMIN keys as fallback if not in session
             api_key = session.get('latex_api_key', ADMIN_NVIDIA_KEY)
             model_name = session.get('latex_model', "meta/llama-3.2-90b-vision-instruct")
             provider = session.get('latex_provider', 'nvidia')
 
-            thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, text_content, api_key, model_name, provider))
+            # Pass 'direct_compile=True' to the task
+            thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, text_content, api_key, model_name, provider, True))
             thread.start()
         else:
             steps = ['Processing Text', 'Generating PDF']
@@ -499,7 +500,7 @@ def process_text_to_pdf_task(job_id, text_content, filename):
     try:
         with app.app_context():
             update_job(job_id, current_step=1, message='Preparing text for conversion...')
-            
+        with app.app_context():
             with tempfile.TemporaryDirectory() as tmpdir:
                 # Save text to a temporary .txt file
                 parts = filename.rsplit('.', 1)
@@ -541,19 +542,35 @@ def process_text_to_pdf_task(job_id, text_content, filename):
                     img = Image.new('RGB', (800, 1100), color=(255, 255, 255))
                     d = ImageDraw.Draw(img)
                     
-                    # Try to use a basic font, fallback to default
-                    try:
-                        # Common path on macOS
-                        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
-                    except:
-                        font = ImageFont.load_default()
+                    # Look for Hindi-compatible fonts on macOS
+                    hindi_fonts = [
+                        "/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc",
+                        "/System/Library/Fonts/Supplemental/KohinoorDevanagari.ttc",
+                        "/System/Library/Fonts/Supplemental/DevanagariMT.ttc"
+                    ]
+                    
+                    font = None
+                    for font_path in hindi_fonts:
+                        try:
+                            if os.path.exists(font_path):
+                                font = ImageFont.truetype(font_path, 20)
+                                print(f"DEBUG: Using Hindi font: {font_path}")
+                                break
+                        except:
+                            continue
+                            
+                    if not font:
+                        try:
+                            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
+                        except:
+                            font = ImageFont.load_default()
                     
                     # Draw the text (very basic wrapping)
                     margin = 50
                     offset = 50
                     for line in text_content.split('\n'):
                         d.text((margin, offset), line, font=font, fill=(0, 0, 0))
-                        offset += 30
+                        offset += 35
                     
                     pdf_buffer = io.BytesIO()
                     img.save(pdf_buffer, format='PDF')
@@ -833,15 +850,19 @@ def review_text(job_id):
         
     return render_template('review_text.html', job_id=job_id, text_content=job.extracted_text, image_id=job.image_id)
 
-def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='gemini'):
+def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='gemini', direct_compile=False):
     try:
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.output_parsers import StrOutputParser
         
         with app.app_context():
-            update_job(job_id, current_step=2, message='RN-Vision-Transformer-200B is synthesizing LaTeX code...')
+            job = get_job(job_id)
+            step_num = 1 if direct_compile else 2
+            update_job(job_id, current_step=step_num, message='RN-Vision-Transformer-200B is synthesizing LaTeX code...')
         
+        # (LLM call logic remains same)
         if provider == 'nvidia':
+            # ... (rest of the existing logic)
             from langchain_nvidia_ai_endpoints import ChatNVIDIA
             llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
         else:
@@ -892,7 +913,11 @@ def process_text_to_latex_task(job_id, text_content, api_key, model_name, provid
         latex_code = re.sub(r'```$', '', latex_code.strip())
 
         with app.app_context():
-            update_job(job_id, extracted_latex=latex_code, current_step=3, status='requires_latex_review', message='LaTeX conversion complete. Final review required.')
+            if direct_compile:
+                update_job(job_id, extracted_latex=latex_code, current_step=2, status='queued', message='Compiling final PDF...')
+                process_compile_latex_task(job_id, latex_code)
+            else:
+                update_job(job_id, extracted_latex=latex_code, current_step=3, status='requires_latex_review', message='LaTeX conversion complete. Final review required.')
     except Exception as e:
         with app.app_context():
             update_job(job_id, error=str(e))
