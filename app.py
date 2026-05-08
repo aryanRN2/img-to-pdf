@@ -1004,7 +1004,7 @@ def process_compile_latex_task(job_id, latex_code):
             # Strategy 2: ConvertAPI (Cloud / Vercel)
             if not pdf_output_bytes:
                 # TRIPLE HARDENING: Ensure secret is a valid string
-                api_secret_val = secret or os.environ.get('CONVERTAPI_SECRET')
+                api_secret_val = os.environ.get('CONVERTAPI_SECRET')
                 if not api_secret_val or "your_secret" in api_secret_val:
                     # Last ditch effort: check global setting
                     api_secret_val = convertapi.api_secret
