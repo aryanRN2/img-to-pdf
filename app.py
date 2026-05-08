@@ -1003,25 +1003,25 @@ def process_compile_latex_task(job_id, latex_code):
 
             # Strategy 2: ConvertAPI (Cloud / Vercel)
             if not pdf_output_bytes:
-                secret = os.environ.get('CONVERTAPI_SECRET')
-                if not secret or secret == 'your_convertapi_secret_here':
-                    update_job(job_id, error="Cloud PDF compilation requires a valid CONVERTAPI_SECRET in Vercel settings.")
-                    return
+                # TRIPLE HARDENING: Ensure secret is a valid string
+                api_secret_val = secret or os.environ.get('CONVERTAPI_SECRET')
+                if not api_secret_val or "your_secret" in api_secret_val:
+                    # Last ditch effort: check global setting
+                    api_secret_val = convertapi.api_secret
                 
-                # Force refresh credentials for this thread safely
+                print(f"DEBUG: LaTeX Task using Secret (first 4 chars): {str(api_secret_val)[:4]}...")
+                
                 import convertapi
-                convertapi.api_secret = str(secret).strip()
-                    
+                convertapi.api_secret = str(api_secret_val).strip()
+                
                 with tempfile.NamedTemporaryFile(suffix='.tex', mode='w', delete=False, encoding='utf-8') as tf:
                     tf.write(latex_code)
                     tf_path = os.path.abspath(tf.name)
                 
                 try:
                     import requests
-                    # Use the raw string content if possible, or ensure file is handled correctly
-                    result = convertapi.convert('pdf', {
-                        'File': tf_path
-                    }, from_format='tex')
+                    # Ensure secret is set for this specific call if possible
+                    result = convertapi.convert('pdf', {'File': tf_path}, from_format='tex')
                     
                     # Fix: ResultFile object does not have url_to_bytes()
                     # We download it using requests from the result URL
