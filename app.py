@@ -1016,8 +1016,21 @@ def process_compile_latex_task(job_id, latex_code):
                     tf_path = tf.name
                 
                 try:
-                    result = convertapi.convert('pdf', {'File': tf_path}, from_format='tex')
-                    pdf_output_bytes = result.file.url_to_bytes()
+                    import requests
+                    # Use the raw string content if possible, or ensure file is handled correctly
+                    result = convertapi.convert('pdf', {
+                        'File': tf_path
+                    }, from_format='tex')
+                    
+                    # Fix: ResultFile object does not have url_to_bytes()
+                    # We download it using requests from the result URL
+                    file_url = result.file.url
+                    pdf_response = requests.get(file_url)
+                    if pdf_response.status_code == 200:
+                        pdf_output_bytes = pdf_response.content
+                    else:
+                        update_job(job_id, error=f"Failed to download PDF from Cloud Compiler: {pdf_response.status_code}")
+                        return
                 finally:
                     if os.path.exists(tf_path): os.remove(tf_path)
 
