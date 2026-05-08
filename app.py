@@ -151,11 +151,11 @@ def health_check():
 
 # Helper functions for Job/File management (DB-backed for Vercel)
 def get_job(job_id):
-    job = JobStatus.query.get(job_id)
+    job = db.session.get(JobStatus, job_id)
     return job
 
 def update_job(job_id, **kwargs):
-    job = JobStatus.query.get(job_id)
+    job = db.session.get(JobStatus, job_id)
     if job:
         for key, value in kwargs.items():
             if key == 'steps':
@@ -185,7 +185,7 @@ def save_file(file_id, name, data, mimetype='application/pdf'):
     return new_file
 
 def get_stored_file(file_id):
-    return StoredFile.query.get(file_id)
+    return db.session.get(StoredFile, file_id)
 
 # Admin's shared API keys (set via env var)
 ADMIN_GEMINI_KEY = os.environ.get('GEMINI_API_KEY', '')
@@ -1004,10 +1004,10 @@ def process_compile_latex_task(job_id, latex_code):
             # Strategy 2: ConvertAPI (Cloud / Vercel)
             if not pdf_output_bytes:
                 # TRIPLE HARDENING: Ensure secret is a valid string
-                api_secret_val = os.environ.get('CONVERTAPI_SECRET')
+                api_secret_val = os.environ.get('CONVERTAPI_SECRET') or ""
                 if not api_secret_val or "your_secret" in api_secret_val:
-                    # Last ditch effort: check global setting
-                    api_secret_val = convertapi.api_secret
+                    # Last ditch effort: check global setting or provide empty string to prevent NoneType crash
+                    api_secret_val = getattr(convertapi, 'api_secret', "") or ""
                 
                 print(f"DEBUG: LaTeX Task using Secret (first 4 chars): {str(api_secret_val)[:4]}...")
                 
