@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+
+{% block title %}Text to PDF | Universal Document WebApp{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+        <div class="transparent-card text-start fade-in-up" style="max-width: 600px;">
+            <div class="d-flex align-items-center mb-4 stagger-1">
+                <a href="{{ url_for('home') }}" class="btn btn-sm btn-outline-secondary me-3" style="border-radius: 50%;">←</a>
+                <h2 class="fw-bold m-0">Text to PDF</h2>
+            </div>
+            <p class="text-muted mb-4 stagger-2">Paste your text below and we'll convert it into a professional PDF document.</p>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show mb-4" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form action="{{ url_for('text_to_pdf') }}" method="POST" class="stagger-3">
+                <div class="mb-4">
+                    <label for="filename" class="form-label fw-bold">Output Filename</label>
+                    <input type="text" class="form-control form-control-premium" id="filename" name="filename" placeholder="my_document.pdf" value="document.pdf">
+                </div>
+                <div class="mb-4">
+                    <label for="text_content" class="form-label fw-bold">Text Content</label>
+                    <textarea class="form-control form-control-premium" id="text_content" name="text_content" rows="12" placeholder="Start typing or paste your content here..." required></textarea>
+                </div>
+                <div class="d-grid mt-4">
+                    <button type="submit" class="btn-blue py-3">Convert to PDF</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -5,6 +5,7 @@ import os
 
 load_dotenv()
 
+
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -44,6 +45,8 @@ def allowed_doc(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_DOC_EXTENSIONS
 
 
+
+
 app = Flask(__name__)
 # In production, use a secure random key like os.urandom(24)
 app.secret_key = "super_secret_key_for_portal" 
@@ -60,15 +63,14 @@ if db_url:
     
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     
-    # Essential for Vercel/Supabase stability: 
-    # Use SSL and handle connection pooling correctly for serverless
+  
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         "connect_args": {"sslmode": "require"},
         "pool_pre_ping": True,
         "pool_recycle": 300,
     }
 else:
-    # Fallback for local development
+
     db_path = "/tmp/portal.db" if os.environ.get('VERCEL') else "portal.db"
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
@@ -132,12 +134,15 @@ class StoredFile(db.Model):
     mimetype = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Initialize database
-with app.app_context():
-    try:
-        db.create_all()
-    except Exception as e:
-        print(f"Database initialization warning: {e}")
+# Initialize database safely for serverless (Lazy Loading)
+@app.before_request
+def initialize_database():
+    if not hasattr(app, '_db_initialized'):
+        try:
+            db.create_all()
+            app._db_initialized = True
+        except Exception as e:
+            app.logger.warning(f"Database initialization warning: {e}")
 
 # Health check for Vercel
 @app.route('/health')
@@ -450,6 +455,122 @@ def process_pdf_to_image_task(job_id, filename, file_bytes):
         with app.app_context():
             update_job(job_id, error=f"Conversion failed: {str(e)}")
 
+@app.route('/text-to-pdf', methods=['GET', 'POST'])
+def text_to_pdf():
+    if request.method == 'POST':
+        text_content = request.form.get('text_content', '').strip()
+        if not text_content:
+            flash('Please enter some text to convert.', 'danger')
+            return redirect(request.url)
+        
+        filename = request.form.get('filename', 'document').strip()
+        if not filename.endswith('.pdf'):
+            filename += '.pdf'
+
+        use_latex = request.form.get('use_latex') == 'true'
+
+        job_id = str(uuid.uuid4())
+        
+        if use_latex:
+            steps = ['Synthesizing LaTeX', 'Awaiting LaTeX Review', 'Compiling Final PDF']
+            create_job(job_id, steps, 'Initializing AI typesetter...', 'text_to_pdf_latex', total_steps=3)
+            
+            # Use ADMIN keys as fallback if not in session
+            api_key = session.get('latex_api_key', ADMIN_NVIDIA_KEY)
+            model_name = session.get('latex_model', "meta/llama-3.2-90b-vision-instruct")
+            provider = session.get('latex_provider', 'nvidia')
+
+            thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, text_content, api_key, model_name, provider))
+            thread.start()
+        else:
+            steps = ['Processing Text', 'Generating PDF']
+            create_job(job_id, steps, 'Starting text conversion...', 'text_to_pdf', total_steps=2)
+            thread = threading.Thread(target=process_text_to_pdf_task, args=(job_id, text_content, filename))
+            thread.start()
+
+        return redirect(url_for('processing_page', job_id=job_id))
+                
+    return render_template('text_to_pdf.html')
+
+def process_text_to_pdf_task(job_id, text_content, filename):
+    print(f"DEBUG: Starting text_to_pdf job {job_id}")
+    print(f"DEBUG: filename={filename}")
+    print(f"DEBUG: text_content length={len(text_content) if text_content else 'None'}")
+    try:
+        with app.app_context():
+            update_job(job_id, current_step=1, message='Preparing text for conversion...')
+            
+            with tempfile.TemporaryDirectory() as tmpdir:
+                # Save text to a temporary .txt file
+                parts = filename.rsplit('.', 1)
+                base_name = parts[0] if parts else 'document'
+                txt_filename = base_name + '.txt'
+                print(f"DEBUG: txt_filename={txt_filename}")
+                
+                safe_name = secure_filename(txt_filename)
+                print(f"DEBUG: safe_name={safe_name}")
+                
+                input_path = os.path.join(tmpdir, safe_name)
+                print(f"DEBUG: input_path={input_path}")
+                
+                with open(input_path, 'w', encoding='utf-8') as f:
+                    f.write(text_content)
+                
+                update_job(job_id, message='Converting text to professional PDF via ConvertAPI...')
+                
+                # Force-refresh ConvertAPI credentials from environment
+                api_secret = os.environ.get('CONVERTAPI_SECRET')
+                if api_secret and 'your' not in api_secret.lower():
+                    import convertapi
+                    convertapi.api_secret = api_secret
+                    # Some versions need this to be set explicitly to avoid NoneType concatenation
+                    if hasattr(convertapi, 'api_credentials'):
+                        convertapi.api_credentials = api_secret
+                
+                try:
+                    print("DEBUG: Attempting ConvertAPI conversion...")
+                    result = convertapi.convert('pdf', { 'File': input_path }, from_format = 'txt')
+                    output_bytes_data = result.file.url_to_bytes()
+                    print("DEBUG: ConvertAPI successful")
+                except Exception as api_err:
+                    print(f"DEBUG: ConvertAPI failed: {str(api_err)}. Switching to local fallback...")
+                    # Fallback: Generate PDF locally using Pillow if API fails
+                    from PIL import Image, ImageDraw, ImageFont
+                    
+                    # Create a white image (A4-ish proportions)
+                    img = Image.new('RGB', (800, 1100), color=(255, 255, 255))
+                    d = ImageDraw.Draw(img)
+                    
+                    # Try to use a basic font, fallback to default
+                    try:
+                        # Common path on macOS
+                        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
+                    except:
+                        font = ImageFont.load_default()
+                    
+                    # Draw the text (very basic wrapping)
+                    margin = 50
+                    offset = 50
+                    for line in text_content.split('\n'):
+                        d.text((margin, offset), line, font=font, fill=(0, 0, 0))
+                        offset += 30
+                    
+                    pdf_buffer = io.BytesIO()
+                    img.save(pdf_buffer, format='PDF')
+                    output_bytes_data = pdf_buffer.getvalue()
+                    print("DEBUG: Local PDF fallback successful")
+                
+                file_id = str(uuid.uuid4())
+                save_file(file_id, filename, output_bytes_data)
+                
+                update_job(job_id, file_id=file_id, current_step=2, status='finished', message='Success! Your text has been converted to PDF.')
+    except Exception as e:
+        import traceback
+        print(f"DEBUG: ERROR OCCURRED: {str(e)}")
+        traceback.print_exc()
+        with app.app_context():
+            update_job(job_id, error=f"Conversion failed: {str(e)}")
+
 @app.route('/download/<file_id>')
 def download_page(file_id):
     file_info = get_stored_file(file_id)
@@ -576,6 +697,7 @@ def image_to_latex():
         return redirect(url_for('home'))
         
     session['latex_api_key'] = ADMIN_NVIDIA_KEY
+
     session['latex_model'] = "meta/llama-3.2-90b-vision-instruct"
     session['latex_provider'] = 'nvidia'
     
@@ -830,8 +952,12 @@ def process_compile_latex_task(job_id, latex_code):
             latex_code = re.sub(r'\\end$', r'\\end{document}', latex_code.strip())
             
             # Robust end-of-document check
-            if r'\begin{document}' in latex_code and r'\end{document}' not in latex_code:
+            if latex_code and r'\begin{document}' in latex_code and r'\end{document}' not in latex_code:
                 latex_code = latex_code + "\n\\end{document}"
+            
+            if not latex_code:
+                update_job(job_id, error="LaTeX generation returned no content.")
+                return
 
             pdf_output_bytes = None
             
@@ -873,6 +999,9 @@ def process_compile_latex_task(job_id, latex_code):
             if not pdf_output_bytes:
                 update_job(job_id, error="PDF compilation failed. Please check your LaTeX syntax or API key.")
                 return
+
+
+
 
             file_id = str(uuid.uuid4())
             save_file(file_id, 'converted_notes.pdf', pdf_output_bytes)

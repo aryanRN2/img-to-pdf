@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Waiting for Approval | PDF.PRO{% endblock %}
+{% block title %}Waiting for Approval | Universal Document WebApp{% endblock %}
 
 {% block extra_css %}
 <script>
@@ -14,7 +14,7 @@
         <div class="transparent-card text-center fade-in-up" style="max-width: 450px;">
             <div class="mb-4 display-4">⏳</div>
             <h2 class="fw-bold mb-3" style="letter-spacing: -1px;">Registration Received</h2>
-            <p class="text-muted mb-5" style="line-height: 1.6;">Your registration for <strong>{{ username }}</strong> is currently pending. Please wait for administrator approval to access AI features.</p>
+            <p class="text-muted mb-5" style="line-height: 1.6;">Your registration for <strong>{{ username }}</strong> is currently pending. Please wait for <strong>Aryan's</strong> approval to access AI features.<br><br>To expedite this, please send an email to <a href="mailto:aryannsv@gmail.com" class="text-primary fw-bold" style="text-decoration:none;">aryannsv@gmail.com</a> mentioning who you are.</p>
 
             <div class="d-grid">
                 <a href="{{ url_for('latex_login') }}" class="btn-blue">Back to Login</a>

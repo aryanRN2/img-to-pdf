@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 
-{% block title %}Welcome | PDF.PRO{% endblock %}
+{% block title %}Welcome | Universal Document WebApp{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -123,6 +123,7 @@
         <a href="{{ url_for('merge_pdf') }}" class="btn-portal-glass">Merge PDF</a>
         <a href="{{ url_for('pdf_to_image') }}" class="btn-portal-glass">PDF to Image</a>
         <a href="{{ url_for('document_to_pdf') }}" class="btn-portal-glass">Document to PDF</a>
+        <a href="{{ url_for('text_to_pdf') }}" class="btn-portal-glass">Text to PDF</a>
         {% if current_user.is_authenticated and current_user.status == 'approved' %}
             <a href="{{ url_for('image_to_latex') }}" class="btn-portal-glass d-inline-flex align-items-center">
                 Image to LaTeX
