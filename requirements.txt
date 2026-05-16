@@ -14,3 +14,5 @@ langchain-core
 langchain-nvidia-ai-endpoints
 openai
 python-dotenv
+requests
+gunicorn

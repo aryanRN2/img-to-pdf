@@ -48,6 +48,7 @@ def allowed_doc(filename):
 
 
 app = Flask(__name__)
+
 # In production, use a secure random key like os.urandom(24)
 app.secret_key = "super_secret_key_for_portal" 
 # 50 MB limit to prevent DoS attacks
@@ -226,9 +227,12 @@ def image_to_pdf():
         steps = ['Uploading Images', 'Processing Format', 'Generating PDF']
         create_job(job_id, steps, 'Starting conversion...', 'image_to_pdf', total_steps=3)
 
-        # Start background thread
-        thread = threading.Thread(target=process_image_to_pdf_task, args=(job_id, file_data))
-        thread.start()
+        # Start background thread (or run synchronously on Vercel)
+        if os.environ.get('VERCEL'):
+            process_image_to_pdf_task(job_id, file_data)
+        else:
+            thread = threading.Thread(target=process_image_to_pdf_task, args=(job_id, file_data))
+            thread.start()
 
         return redirect(url_for('processing_page', job_id=job_id))
                 
@@ -311,8 +315,11 @@ def merge_pdf():
         steps = ['Uploading Files', 'Merging Documents']
         create_job(job_id, steps, 'Starting merge process...', 'merge_pdf', total_steps=2)
 
-        thread = threading.Thread(target=process_merge_pdf_task, args=(job_id, file_data))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_merge_pdf_task(job_id, file_data)
+        else:
+            thread = threading.Thread(target=process_merge_pdf_task, args=(job_id, file_data))
+            thread.start()
 
         return redirect(url_for('processing_page', job_id=job_id))
             
@@ -363,8 +370,11 @@ def document_to_pdf():
 
         file_bytes = file.read()
         filename = file.filename
-        thread = threading.Thread(target=process_document_to_pdf_task, args=(job_id, filename, file_bytes))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_document_to_pdf_task(job_id, filename, file_bytes)
+        else:
+            thread = threading.Thread(target=process_document_to_pdf_task, args=(job_id, filename, file_bytes))
+            thread.start()
 
         return redirect(url_for('processing_page', job_id=job_id))
                 
@@ -415,8 +425,11 @@ def pdf_to_image():
 
         file_bytes = file.read()
         filename = file.filename
-        thread = threading.Thread(target=process_pdf_to_image_task, args=(job_id, filename, file_bytes))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_pdf_to_image_task(job_id, filename, file_bytes)
+        else:
+            thread = threading.Thread(target=process_pdf_to_image_task, args=(job_id, filename, file_bytes))
+            thread.start()
 
         return redirect(url_for('processing_page', job_id=job_id))
                 
@@ -481,13 +494,19 @@ def text_to_pdf():
             provider = session.get('latex_provider', 'nvidia')
 
             # Pass 'direct_compile=True' to the task
-            thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, text_content, api_key, model_name, provider, True))
-            thread.start()
+            if os.environ.get('VERCEL'):
+                process_text_to_latex_task(job_id, text_content, api_key, model_name, provider, True)
+            else:
+                thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, text_content, api_key, model_name, provider, True))
+                thread.start()
         else:
             steps = ['Processing Text', 'Generating PDF']
             create_job(job_id, steps, 'Starting text conversion...', 'text_to_pdf', total_steps=2)
-            thread = threading.Thread(target=process_text_to_pdf_task, args=(job_id, text_content, filename))
-            thread.start()
+            if os.environ.get('VERCEL'):
+                process_text_to_pdf_task(job_id, text_content, filename)
+            else:
+                thread = threading.Thread(target=process_text_to_pdf_task, args=(job_id, text_content, filename))
+                thread.start()
 
         return redirect(url_for('processing_page', job_id=job_id))
                 
@@ -758,16 +777,19 @@ def image_to_latex_upload():
 
         api_key = session['latex_api_key']
         model_name = session['latex_model']
-        provider = session.get('latex_provider', 'gemini')
+        provider = session.get('latex_provider', 'nvidia')
 
         # Pass filename and mimetype to thread so it can save the file
-        thread = threading.Thread(target=process_image_to_text_task, args=(job_id, image_data, api_key, model_name, provider, image_id, file.filename, file.mimetype))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_image_to_text_task(job_id, image_data, api_key, model_name, provider, image_id, file.filename, file.mimetype)
+        else:
+            thread = threading.Thread(target=process_image_to_text_task, args=(job_id, image_data, api_key, model_name, provider, image_id, file.filename, file.mimetype))
+            thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
                 
     return render_template('image_to_latex_upload.html', model_name=model_name)
 
-def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='gemini', image_id=None, filename=None, mimetype=None):
+def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provider='nvidia', image_id=None, filename=None, mimetype=None):
     try:
         from langchain_core.messages import HumanMessage
         
@@ -819,7 +841,7 @@ def process_image_to_text_task(job_id, image_bytes, api_key, model_name, provide
                     model="gemini-1.5-flash",
                     contents=[
                         vision_prompt,
-                        types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+                        types.Part.from_bytes(data=image_bytes, mime_type=mimetype or "image/jpeg")
                     ]
                 )
                 return response.text
@@ -842,15 +864,18 @@ def review_text(job_id):
         
         api_key = session.get('latex_api_key')
         model_name = session.get('latex_model')
-        provider = session.get('latex_provider', 'gemini')
+        provider = session.get('latex_provider', 'nvidia')
         
-        thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, edited_text, api_key, model_name, provider))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_text_to_latex_task(job_id, edited_text, api_key, model_name, provider)
+        else:
+            thread = threading.Thread(target=process_text_to_latex_task, args=(job_id, edited_text, api_key, model_name, provider))
+            thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
         
     return render_template('review_text.html', job_id=job_id, text_content=job.extracted_text, image_id=job.image_id)
 
-def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='gemini', direct_compile=False):
+def process_text_to_latex_task(job_id, text_content, api_key, model_name, provider='nvidia', direct_compile=False):
     try:
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.output_parsers import StrOutputParser
@@ -864,7 +889,9 @@ def process_text_to_latex_task(job_id, text_content, api_key, model_name, provid
         if provider == 'nvidia':
             # ... (rest of the existing logic)
             from langchain_nvidia_ai_endpoints import ChatNVIDIA
-            llm = ChatNVIDIA(model="meta/llama-3.1-8b-instruct", nvidia_api_key=api_key, temperature=0.1)
+            # Use the requested model if provided, else fallback
+            target_model = model_name if model_name else "meta/llama-3.1-8b-instruct"
+            llm = ChatNVIDIA(model=target_model, nvidia_api_key=api_key, temperature=0.1)
         else:
             # Using google-genai SDK directly
             pass
@@ -931,8 +958,11 @@ def review_latex(job_id):
         edited_latex = request.form.get('latex_code', '')
         update_job(job_id, extracted_latex=edited_latex, status='queued', current_step=3, message='Compiling final PDF...')
         
-        thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_compile_latex_task(job_id, edited_latex)
+        else:
+            thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
+            thread.start()
         return redirect(url_for('processing_page', job_id=job_id))
         
     return render_template('review_latex.html', job_id=job_id, latex_code=job.extracted_latex)
@@ -956,8 +986,11 @@ def edit_latex(job_id):
         update_job(job_id, extracted_latex=edited_latex, status='queued', current_step=0, total_steps=2, 
                    steps=['Compiling PDF', 'Finalizing Results'], message='Compiling LaTeX to PDF...')
         
-        thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
-        thread.start()
+        if os.environ.get('VERCEL'):
+            process_compile_latex_task(job_id, edited_latex)
+        else:
+            thread = threading.Thread(target=process_compile_latex_task, args=(job_id, edited_latex))
+            thread.start()
         
         return redirect(url_for('processing_page', job_id=job_id))
         
@@ -1023,14 +1056,22 @@ def process_compile_latex_task(job_id, latex_code):
                     # Ensure secret is set for this specific call if possible
                     result = convertapi.convert('pdf', {'File': tf_path}, from_format='tex')
                     
-                    # Fix: ResultFile object does not have url_to_bytes()
-                    # We download it using requests from the result URL
-                    file_url = result.file.url
-                    pdf_response = requests.get(file_url)
-                    if pdf_response.status_code == 200:
-                        pdf_output_bytes = pdf_response.content
+                    # ConvertAPI returns a Result object. Accessing the first file.
+                    # Some versions of the library have .url directly, others need .file.url
+                    result_file = getattr(result, 'file', None)
+                    if not result_file and hasattr(result, 'files'):
+                        result_file = result.files[0]
+                    
+                    if result_file:
+                        file_url = result_file.url
+                        pdf_response = requests.get(file_url)
+                        if pdf_response.status_code == 200:
+                            pdf_output_bytes = pdf_response.content
+                        else:
+                            update_job(job_id, error=f"Failed to download PDF from Cloud Compiler: {pdf_response.status_code}")
+                            return
                     else:
-                        update_job(job_id, error=f"Failed to download PDF from Cloud Compiler: {pdf_response.status_code}")
+                        update_job(job_id, error="ConvertAPI returned no files.")
                         return
                 finally:
                     if os.path.exists(tf_path): os.remove(tf_path)

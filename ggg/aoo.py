@@ -1,50 +1,51 @@
 class Solution:
-    def maxPathScore(self, grid: List[List[int]], k: int) -> int:
+    def rotateGrid(self, grid: List[List[int]], k: int) -> List[List[int]]:
         m, n = len(grid), len(grid[0])
+        lyr = min(m, n) // 2
         
-        
-        costs = [0, 1, 1]
-        scr = [0, 1, 2]
-        
-       
-        dp = [[[-1] * (k + 1) for _ in range(n)] for _ in range(m)]
-        
-        sv = grid[0][0]
-        sc = costs[sv]
-        
-       
-        if sc > k:
-            return -1
+        for o in range(lyr):
+         
+            top, left = o, o
+            bottom,right = m - 1 - o , n - 1 - o
             
-        dp[0][0][sc] = scr[sv]
+           
+            elements = []
+            
+          
+            for j in range(left ,right):
+                elements.append(grid[top][j])
         
+            for i in range(top,bottom):
+
+                elements.append(grid[i][right])
        
-        for i in range(m):
-            for j in range(n):
+            for j in range(right,left, -1):
+                elements.append(grid[bottom][j])
+           
+            for i in range(bottom,top, -1):
+                elements.append(grid[i][left])
+            
+            L = len(elements)
+            real_k = k % L
+            rotate = elements[real_k:]+ elements[:real_k]
+            
+       
+            idx = 0
+            for j in range(left,right):
+
+
+
+
+                grid[top][j]  = rotate[idx]
+                idx += 1
+            for i in range(top,bottom):
+                grid[i][right]  = rotate[idx]
+                idx += 1
+            for j in range(right,left, -1):
+                grid[bottom][j] = rotate[idx]
+                idx += 1
+            for i in range(bottom,top, -1):
+                grid[i][left] = rotate[idx]
+                idx += 1
                 
-                if i == 0 and j == 0:
-                    continue
-                    
-                val = grid[i][j]
-                new = costs[val]
-                news = scr[val]
-                
-               
-                for c in range(new, k + 1):
-                    prev_cost = c - new
-                    
-                    max1 = -1
-                    
-                   
-                    if i > 0 and dp[i-1][j][prev_cost] != -1:
-                        max1 = max(max1, dp[i-1][j][prev_cost] + news)
-                        
-                   
-                    if j > 0 and dp[i][j-1][prev_cost] != -1:
-                        max1 = max(max1, dp[i][j-1][prev_cost] + news)
-                        
-                    dp[i][j][c] = max1
-                    
-        
-        ans = max(dp[m-1][n-1])
-        return ans
+        return grid
